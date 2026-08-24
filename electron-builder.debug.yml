@@ -1,0 +1,22 @@
+appId: com.local.xiaomu.voicestudio.debug
+productName: 小沐音色工坊 Debug
+asar: false
+compression: store
+directories:
+  output: dist/voice-studio-debug
+  buildResources: build
+extraMetadata:
+  name: local-voice-studio-debug
+  version: 0.1.0-debug
+  main: electron/main.cjs
+files:
+  - electron/**/*
+  - src/**/*
+  - python/**/*
+  - package.json
+win:
+  target:
+    - target: dir
+      arch:
+        - x64
+  executableName: XiaoMuVoiceStudio-Debug

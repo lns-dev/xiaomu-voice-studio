@@ -1,0 +1,8 @@
+{
+  "indexPython": "D:\\VoiceStudioRuntime\\python.exe",
+  "indexRepo": "D:\\VoiceStudioRuntime\\engines\\IndexTTS-2.5",
+  "qwenPython": "D:\\VoiceStudioRuntime\\python.exe",
+  "ffmpegRoot": "D:\\VoiceStudioRuntime\\tools\\ffmpeg\\bin",
+  "legacyArtifactRoot": "",
+  "legacyModelRoot": ""
+}

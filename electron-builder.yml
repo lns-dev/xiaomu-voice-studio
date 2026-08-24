@@ -1,0 +1,42 @@
+appId: com.local.xiaomu.voicestudio
+productName: 小沐音色工坊
+asar: true
+compression: normal
+npmRebuild: false
+directories:
+  output: dist/voice-studio-release
+  buildResources: build
+extraMetadata:
+  name: local-voice-studio
+  version: 0.1.0-alpha.3
+  main: electron/main.cjs
+files:
+  - electron/**/*
+  - src/**/*
+  - python/**/*
+  - package.json
+extraResources:
+  - from: release
+    to: release
+    filter:
+      - "**/*"
+asarUnpack:
+  - python/**/*
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  executableName: XiaoMuVoiceStudio
+  icon: build/icon.ico
+  artifactName: XiaoMuVoiceStudio-${version}-win-${arch}-Setup.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: 小沐音色工坊
+  uninstallDisplayName: 小沐音色工坊
+  deleteAppDataOnUninstall: false

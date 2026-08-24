@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "runtimeVersion": "0.1.0-alpha.3",
+  "architecture": "win-x64",
+  "python": "3.11.x",
+  "torch": "2.8.0+cu128",
+  "torchaudio": "2.8.0+cu128",
+  "components": [
+    { "id": "core", "required": true, "description": "Shared Python, PyTorch, Torchaudio and CUDA runtime" },
+    { "id": "indextts25", "required": true, "description": "IndexTTS 2.5 code and Python dependency layer" },
+    { "id": "qwen3-tts-voicedesign", "required": true, "description": "Qwen3-TTS VoiceDesign code and Python dependency layer" },
+    { "id": "ffmpeg", "required": true, "description": "FFmpeg audio inspection and trimming tools" }
+  ],
+  "modelsBundled": false,
+  "downloadBaseUrl": null,
+  "notes": "Release asset URLs are injected after a GitHub repository and release tag are configured."
+}

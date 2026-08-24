@@ -1,0 +1,9 @@
+7-Zip command-line extractor
+Copyright (C) 1999-2024 Igor Pavlov.
+7-Zip is licensed under the GNU LGPL with the unRAR restriction.
+Source and license information: https://www.7-zip.org/license.txt
+
+The optional runtime bundles contain third-party Python packages and engine code.
+Their license and metadata files are preserved inside their respective archives.
+Speech model weights are not bundled with this application and remain subject to
+the model publishers' licenses and usage terms.
