@@ -12,6 +12,6 @@
     { "id": "ffmpeg", "required": true, "description": "FFmpeg audio inspection and trimming tools" }
   ],
   "modelsBundled": false,
-  "downloadBaseUrl": null,
-  "notes": "Release asset URLs are injected after a GitHub repository and release tag are configured."
+  "downloadBaseUrl": "https://github.com/lns-dev/xiaomu-voice-studio/releases/download/v0.1.0-alpha.3",
+  "notes": "Runtime components are downloaded from the matching GitHub Release."
 }
