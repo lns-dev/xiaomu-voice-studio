@@ -39,3 +39,11 @@ test('packaged workers launch from the actual asar-unpacked Python directory', (
   assert.match(main, /if \(!exists\(this\.config\.script\)\) throw new Error/);
   assert.match(main, /if \(!exists\(pythonRoot\)\) throw new Error/);
 });
+
+test('bottom preview actions expose hover, pressed and keyboard focus feedback', () => {
+  const css = read('src/enhancements.css');
+  assert.match(css, /\.result-actions \.secondary:hover:not\(:disabled\)/);
+  assert.match(css, /\.result-actions \.primary:hover:not\(:disabled\)/);
+  assert.match(css, /\.result-actions button:active:not\(:disabled\)/);
+  assert.match(css, /\.result-actions button:focus-visible/);
+});
