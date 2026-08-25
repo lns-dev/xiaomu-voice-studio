@@ -402,10 +402,14 @@ function modelDownloadRunning(download) {
   return ['planning', 'downloading', 'verifying'].includes(download?.stage);
 }
 
+function modelDownloadProgressHidden(download) {
+  return ['idle', 'completed'].includes(download?.stage);
+}
+
 function modelDownloadProgressView(engineKey) {
   const download = state.modelDownloads[engineKey];
   const root = document.createElement('div'); root.className = 'model-download-progress'; root.id = `${engineKey}-model-download-progress`;
-  root.classList.toggle('hidden', download.stage === 'idle');
+  root.classList.toggle('hidden', modelDownloadProgressHidden(download));
   root.classList.toggle('failed', download.stage === 'failed');
   root.classList.toggle('completed', download.stage === 'completed');
   const head = document.createElement('div'); head.className = 'model-download-progress-head';
@@ -434,7 +438,7 @@ function updateModelDownloadProgress(event) {
   const download = state.modelDownloads[event.engine];
   const root = $(`#${event.engine}-model-download-progress`);
   if (root) {
-    root.classList.toggle('hidden', download.stage === 'idle');
+    root.classList.toggle('hidden', modelDownloadProgressHidden(download));
     root.classList.toggle('failed', download.stage === 'failed');
     root.classList.toggle('completed', download.stage === 'completed');
     $(`#${event.engine}-model-download-message`).textContent = download.message || '正在处理模型';

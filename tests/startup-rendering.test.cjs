@@ -24,3 +24,9 @@ test('system and storage status restore snapshots before silent refresh', () => 
   assert.match(app, /void pollSystemStatus\(\);[\s\S]*void refreshStorage\(\);/);
   assert.match(app, /void probeRuntimeInBackground\(\);/);
 });
+
+test('completed model downloads hide their progress panels', () => {
+  const app = read('src/app.mjs');
+  assert.match(app, /function modelDownloadProgressHidden\(download\)[\s\S]*\['idle', 'completed'\]\.includes\(download\?\.stage\)/);
+  assert.match(app, /root\.classList\.toggle\('hidden', modelDownloadProgressHidden\(download\)\)/);
+});
