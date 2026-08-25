@@ -13,6 +13,7 @@ const { createProductPaths } = require('./product-paths.cjs');
 const { createRuntimeLocations } = require('./runtime-locations.cjs');
 const { downloadRuntimeBundles, installRuntimeBundles, readManifest, removeDownloadedBundles } = require('./runtime-installer.cjs');
 const { detectBuildChannel } = require('./build-channel.cjs');
+const { MODEL_DOWNLOAD_URLS, isAllowedModelDownloadUrl } = require('./model-downloads.cjs');
 
 const chromiumSessionRoot = path.join(app.getPath('userData'), 'chromium-session-v2');
 fs.mkdirSync(chromiumSessionRoot, { recursive: true });
@@ -178,7 +179,7 @@ function engineStatus() {
       modelPath: indexConfig.model,
       defaultModelPath: path.join(modelRoot, 'IndexTTS-2.5'),
       modelPathSource: modelPathSource('index', indexConfig.model),
-      modelDownloadUrl: 'https://huggingface.co/IndexTeam/IndexTTS-2'
+      modelDownloadUrl: MODEL_DOWNLOAD_URLS.index
     },
     qwen: {
       id: 'qwen3-tts-voicedesign',
@@ -190,7 +191,7 @@ function engineStatus() {
       modelPath: qwenConfig.model,
       defaultModelPath: path.join(modelRoot, 'Qwen3-TTS-12Hz-1.7B-VoiceDesign'),
       modelPathSource: modelPathSource('qwen', qwenConfig.model),
-      modelDownloadUrl: 'https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign'
+      modelDownloadUrl: MODEL_DOWNLOAD_URLS.qwen
     },
     runtime: { ...runtime, ffmpegReady }
   };
@@ -879,11 +880,7 @@ ipcMain.handle('studio:install-runtime', async () => {
 });
 
 ipcMain.handle('studio:open-model-download', async (_event, url) => {
-  const allowed = new Set([
-    'https://huggingface.co/IndexTeam/IndexTTS-2',
-    'https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign'
-  ]);
-  if (!allowed.has(url)) throw new Error('不受信任的模型下载地址');
+  if (!isAllowedModelDownloadUrl(url)) throw new Error('不受信任的模型下载地址');
   await shell.openExternal(url);
   return true;
 });
