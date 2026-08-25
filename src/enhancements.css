@@ -2116,6 +2116,7 @@
 .model-location-block code { padding: 0; background: transparent; }
 .model-location-block small { color: #6f7a92; font-size: 8px; word-break: break-all; }
 .model-location-actions { justify-content: flex-start; }
+.model-location-actions { flex-wrap:wrap; }
 .runtime-actions button,
 .model-location-actions button,
 .storage-card button {
@@ -2161,7 +2162,20 @@
   animation: engine-button-spin .7s linear infinite;
 }
 @keyframes engine-button-spin { to { transform: rotate(360deg); } }
-.model-download-button { margin-left: auto; }
+.model-download-start { margin-left: auto; }
+.model-download-cancel.hidden { display:none; }
+.model-download-progress { display:grid; gap:7px; margin-top:12px; padding:11px 12px; border:1px solid #493b78; border-radius:10px; background:#141126; }
+.model-download-progress.hidden { display:none; }
+.model-download-progress.failed { border-color:#6d3441; background:#24151c; }
+.model-download-progress.completed { border-color:#285a48; background:#11241d; }
+.model-download-progress-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.model-download-progress-head b { min-width:0; overflow:hidden; color:#d9d2ff; font-size:9px; text-overflow:ellipsis; white-space:nowrap; }
+.model-download-progress-head output { flex:none; color:#a995ff; font:700 9px/1 Consolas,monospace; }
+.model-download-progress progress { width:100%; height:6px; border:0; border-radius:999px; overflow:hidden; background:#252a3a; }
+.model-download-progress progress::-webkit-progress-bar { background:#252a3a; border-radius:999px; }
+.model-download-progress progress::-webkit-progress-value { border-radius:999px; background:linear-gradient(90deg,#735cff,#9b83ff); transition:width .18s linear; }
+.model-download-progress.completed progress::-webkit-progress-value { background:linear-gradient(90deg,#3da77b,#6ed5a7); }
+.model-download-progress small { overflow:hidden; color:#7f8aa2; font-size:8px; text-overflow:ellipsis; white-space:nowrap; }
 .runtime-card { grid-column: 1 / -1; }
 .settings-card-loading { min-height:82px; margin-top:18px; border:1px solid #2c3448; border-radius:12px; background:#0c111b; display:flex; align-items:center; justify-content:center; gap:10px; color:#7e899f; font-size:11px; }
 .settings-card-loading i { width:7px; height:7px; border-radius:50%; background:#8068ff; box-shadow:0 0 10px rgba(128,104,255,.75); animation:settings-loading-pulse 1.2s ease-in-out infinite; }

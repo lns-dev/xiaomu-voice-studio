@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('voiceStudio', {
   addRuntimeLocation: () => ipcRenderer.invoke('studio:add-runtime-location'),
   installRuntime: () => ipcRenderer.invoke('studio:install-runtime'),
   openModelDownload: (url) => ipcRenderer.invoke('studio:open-model-download', url),
+  downloadModel: (engine) => ipcRenderer.invoke('studio:download-model', engine),
+  cancelModelDownload: (engine) => ipcRenderer.invoke('studio:cancel-model-download', engine),
   synthesizeClone: (request) => ipcRenderer.invoke('studio:synthesize-clone', request),
   synthesizeDesign: (request) => ipcRenderer.invoke('studio:synthesize-design', request),
   cancelActiveTask: () => ipcRenderer.invoke('studio:cancel-active'),
@@ -36,5 +38,10 @@ contextBridge.exposeInMainWorld('voiceStudio', {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on('studio:runtime-install-progress', listener);
     return () => ipcRenderer.removeListener('studio:runtime-install-progress', listener);
+  },
+  onModelDownloadProgress: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('studio:model-download-progress', listener);
+    return () => ipcRenderer.removeListener('studio:model-download-progress', listener);
   }
 });

@@ -8,7 +8,11 @@ const state = {
   referenceTrim: { active: false, startSeconds: 0, endSeconds: 0, dragging: null },
   progressErrors: { qwen: '', index: '' },
   runtimeInstall: { status: 'idle', stage: 'idle', percent: 0, message: '', received: 0, total: 0 },
-  runtimeProbe: { status: 'idle' }
+  runtimeProbe: { status: 'idle' },
+  modelDownloads: {
+    qwen: { stage: 'idle', percent: 0, received: 0, total: 0, message: '' },
+    index: { stage: 'idle', percent: 0, received: 0, total: 0, message: '' }
+  }
 };
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -394,6 +398,62 @@ function formatBytes(bytes) {
   return `${(value / 1024 ** 3).toFixed(2)} GB`;
 }
 
+function modelDownloadRunning(download) {
+  return ['planning', 'downloading', 'verifying'].includes(download?.stage);
+}
+
+function modelDownloadProgressView(engineKey) {
+  const download = state.modelDownloads[engineKey];
+  const root = document.createElement('div'); root.className = 'model-download-progress'; root.id = `${engineKey}-model-download-progress`;
+  root.classList.toggle('hidden', download.stage === 'idle');
+  root.classList.toggle('failed', download.stage === 'failed');
+  root.classList.toggle('completed', download.stage === 'completed');
+  const head = document.createElement('div'); head.className = 'model-download-progress-head';
+  const message = document.createElement('b'); message.id = `${engineKey}-model-download-message`; message.textContent = download.message || '准备模型下载';
+  const value = document.createElement('output'); value.id = `${engineKey}-model-download-value`; value.textContent = download.stage === 'planning' ? '读取清单' : `${Math.round(download.percent || 0)}%`;
+  head.append(message, value);
+  const progress = document.createElement('progress'); progress.id = `${engineKey}-model-download-bar`; progress.max = 100; progress.value = download.percent || 0;
+  const detail = document.createElement('small'); detail.id = `${engineKey}-model-download-detail`;
+  detail.textContent = download.total > 0
+    ? `${formatBytes(download.received)} / ${formatBytes(download.total)}${download.fileCount ? ` · ${download.fileIndex || 0}/${download.fileCount} 个文件` : ''}`
+    : '正在连接模型下载源…';
+  root.append(head, progress, detail);
+  return root;
+}
+
+function updateModelDownloadProgress(event) {
+  if (!['qwen', 'index'].includes(event?.engine)) return;
+  const previous = state.modelDownloads[event.engine];
+  state.modelDownloads[event.engine] = {
+    ...previous,
+    ...event,
+    percent: Math.max(0, Math.min(100, Number(event.percent) || 0)),
+    received: Math.max(0, Number(event.received) || 0),
+    total: Math.max(0, Number(event.total) || 0)
+  };
+  const download = state.modelDownloads[event.engine];
+  const root = $(`#${event.engine}-model-download-progress`);
+  if (root) {
+    root.classList.toggle('hidden', download.stage === 'idle');
+    root.classList.toggle('failed', download.stage === 'failed');
+    root.classList.toggle('completed', download.stage === 'completed');
+    $(`#${event.engine}-model-download-message`).textContent = download.message || '正在处理模型';
+    $(`#${event.engine}-model-download-value`).textContent = download.stage === 'planning' ? '读取清单' : `${Math.round(download.percent)}%`;
+    $(`#${event.engine}-model-download-bar`).value = download.percent;
+    $(`#${event.engine}-model-download-detail`).textContent = download.total > 0
+      ? `${formatBytes(download.received)} / ${formatBytes(download.total)}${download.fileCount ? ` · ${download.fileIndex || 0}/${download.fileCount} 个文件` : ''}`
+      : download.stage === 'failed' ? '保留了未完成文件，下次可继续下载' : '正在连接模型下载源…';
+  }
+  const anyRunning = Object.values(state.modelDownloads).some(modelDownloadRunning);
+  $$('.model-download-start').forEach((button) => {
+    const own = button.dataset.engine === event.engine && modelDownloadRunning(download);
+    button.disabled = anyRunning;
+    button.classList.toggle('is-working', own);
+    button.textContent = own ? (download.stage === 'planning' ? '读取清单…' : `下载中 ${Math.round(download.percent)}%`) : '一键下载完整模型';
+  });
+  $$('.model-download-cancel').forEach((button) => button.classList.toggle('hidden', !(button.dataset.engine === event.engine && modelDownloadRunning(download))));
+}
+
 function renderStorage(storage) {
   state.storage = storage;
   const entries = [
@@ -450,16 +510,37 @@ function engineCard(eyebrow, title, engine, engineKey) {
     } catch (error) { showToast(`添加失败：${error.message}`); }
     finally { setButtonWorking(add, false); }
   });
-  const download = document.createElement('button'); download.type = 'button'; download.className = 'secondary small model-download-button'; download.textContent = '下载模型 ↗';
-  download.title = '在浏览器中打开官方模型下载页面';
+  const modelDownload = state.modelDownloads[engineKey];
+  const download = document.createElement('button'); download.type = 'button'; download.className = 'primary small model-download-start'; download.dataset.engine = engineKey; download.textContent = modelDownloadRunning(modelDownload) ? `下载中 ${Math.round(modelDownload.percent)}%` : '一键下载完整模型';
+  download.title = engineKey === 'index' ? '下载 IndexTTS 2.5 主模型及全部必需辅助模型' : '下载完整 Qwen VoiceDesign 模型';
+  download.disabled = Object.values(state.modelDownloads).some(modelDownloadRunning);
+  download.classList.toggle('is-working', modelDownloadRunning(modelDownload));
   download.addEventListener('click', async () => {
-    setButtonWorking(download, true, '正在打开…');
+    updateModelDownloadProgress({ engine: engineKey, stage: 'planning', percent: 0, received: 0, total: 0, message: '正在获取完整模型清单' });
+    try {
+      const result = await window.voiceStudio.downloadModel(engineKey);
+      if (result && !result.cancelled) {
+        applyModelLocationResult(result, '完整模型下载并校验完成');
+      }
+    } catch (error) {
+      const message = String(error?.message || error).replace(/^Error invoking remote method 'studio:download-model': Error:\s*/i, '');
+      updateModelDownloadProgress({ engine: engineKey, stage: 'failed', percent: 0, message });
+      showToast(`模型下载失败：${message}`);
+    }
+  });
+  const cancelDownload = document.createElement('button'); cancelDownload.type = 'button'; cancelDownload.className = 'danger small model-download-cancel'; cancelDownload.dataset.engine = engineKey; cancelDownload.textContent = '取消下载';
+  cancelDownload.classList.toggle('hidden', !modelDownloadRunning(modelDownload));
+  cancelDownload.addEventListener('click', async () => { await window.voiceStudio.cancelModelDownload(engineKey); });
+  const external = document.createElement('button'); external.type = 'button'; external.className = 'secondary small model-download-button'; external.textContent = '手动下载 ↗';
+  external.title = '在浏览器中打开官方模型页面，手动下载模型';
+  external.addEventListener('click', async () => {
+    setButtonWorking(external, true, '正在打开…');
     try { await window.voiceStudio.openModelDownload(engine.modelDownloadUrl); }
     catch (error) { showToast(`打开失败：${error.message}`); }
-    finally { setButtonWorking(download, false); }
+    finally { setButtonWorking(external, false); }
   });
-  actions.append(detect, add, download);
-  fragment.append(marker, heading, status, location, detail, actions);
+  actions.append(detect, add, download, cancelDownload, external);
+  fragment.append(marker, heading, status, location, detail, actions, modelDownloadProgressView(engineKey));
   return fragment;
 }
 
@@ -1920,6 +2001,13 @@ function installEvents() {
       appendLog(`运行环境：${event.message}${Number.isFinite(event.percent) ? `（${event.percent}%）` : ''}`);
     }
     if (event.stage === 'completed' || event.stage === 'failed') showToast(event.message);
+  });
+  window.voiceStudio.onModelDownloadProgress((event) => {
+    const previous = state.modelDownloads[event.engine];
+    updateModelDownloadProgress(event);
+    if (event.message !== previous?.message || ['completed', 'failed', 'cancelled'].includes(event.stage)) appendLog(`${event.engine === 'index' ? 'IndexTTS 2.5' : 'Qwen VoiceDesign'}：${event.message}`);
+    if (event.stage === 'completed') showToast(event.message);
+    if (event.stage === 'cancelled') showToast('模型下载已取消，未完成部分将在下次继续');
   });
 }
 

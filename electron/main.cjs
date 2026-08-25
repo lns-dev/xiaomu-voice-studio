@@ -8,13 +8,17 @@ const readline = require('node:readline');
 const { pathToFileURL } = require('node:url');
 const { validateCloneRequest, validateDesignRequest } = require('./contract.cjs');
 const { analyzeAudio, createReferenceCopy, configureAudioTools, resolveTool } = require('./audio-tools.cjs');
-const { discoverModels, findModelDirectory, uniqueDirectories } = require('./model-locations.cjs');
+const { discoverModels, findModelDirectory, isModelDirectory, uniqueDirectories } = require('./model-locations.cjs');
 const { createProductPaths } = require('./product-paths.cjs');
 const { createRuntimeLocations } = require('./runtime-locations.cjs');
 const { downloadRuntimeBundles, installRuntimeBundles, readManifest, removeDownloadedBundles } = require('./runtime-installer.cjs');
 const { detectBuildChannel } = require('./build-channel.cjs');
 const { MODEL_DOWNLOAD_URLS, isAllowedModelDownloadUrl } = require('./model-downloads.cjs');
+const { downloadPreparedModel, formatBytes: formatDownloadBytes, prepareModelDownload } = require('./model-downloader.cjs');
 
+if (process.argv.includes('--smoke') && process.env.XIAOMU_SMOKE_USER_DATA) {
+  app.setPath('userData', path.resolve(process.env.XIAOMU_SMOKE_USER_DATA));
+}
 const chromiumSessionRoot = path.join(app.getPath('userData'), 'chromium-session-v2');
 fs.mkdirSync(chromiumSessionRoot, { recursive: true });
 app.setPath('sessionData', chromiumSessionRoot);
@@ -79,6 +83,8 @@ configureAudioTools([
 let mainWindow;
 let activeWorker = null;
 let activeJob = null;
+let activeModelDownload = null;
+let runtimeInstallActive = false;
 const approvedReferences = new Set();
 const approvedOutputs = new Set();
 const workers = new Map();
@@ -172,9 +178,9 @@ function engineStatus() {
     index: {
       id: 'indextts25',
       label: 'IndexTTS 2.5',
-      installed: exists(indexConfig.python) && packagedIndexDependencies && exists(indexConfig.repo) && exists(path.join(indexConfig.model, 'config.yaml')),
+      installed: exists(indexConfig.python) && packagedIndexDependencies && exists(indexConfig.repo) && isModelDirectory('index', indexConfig.model),
       runtimeReady: exists(indexConfig.python) && packagedIndexDependencies && exists(indexConfig.repo),
-      modelReady: exists(path.join(indexConfig.model, 'config.yaml')),
+      modelReady: isModelDirectory('index', indexConfig.model),
       purpose: '音色克隆',
       modelPath: indexConfig.model,
       defaultModelPath: path.join(modelRoot, 'IndexTTS-2.5'),
@@ -184,9 +190,9 @@ function engineStatus() {
     qwen: {
       id: 'qwen3-tts-voicedesign',
       label: 'Qwen3-TTS 1.7B VoiceDesign',
-      installed: exists(qwenConfig.python) && packagedQwenDependencies && exists(path.join(qwenConfig.model, 'config.json')),
+      installed: exists(qwenConfig.python) && packagedQwenDependencies && isModelDirectory('qwen', qwenConfig.model),
       runtimeReady: exists(qwenConfig.python) && packagedQwenDependencies,
-      modelReady: exists(path.join(qwenConfig.model, 'config.json')),
+      modelReady: isModelDirectory('qwen', qwenConfig.model),
       purpose: '音色设计',
       modelPath: qwenConfig.model,
       defaultModelPath: path.join(modelRoot, 'Qwen3-TTS-12Hz-1.7B-VoiceDesign'),
@@ -557,6 +563,8 @@ function writeOutputSidecar(engine, request, result, output) {
 
 async function runExclusive(engine, request) {
   if (activeJob) throw new Error('当前已有任务运行，请等待完成或先停止');
+  if (activeModelDownload) throw new Error('当前正在下载模型，请等待下载完成或先取消下载');
+  if (runtimeInstallActive) throw new Error('当前正在安装运行环境，请等待安装完成');
   const status = engineStatus();
   const targetStatus = engine === 'index' ? status.index : status.qwen;
   if (!targetStatus.installed) {
@@ -775,6 +783,7 @@ ipcMain.handle('studio:system-status', () => querySystemResources());
 ipcMain.handle('studio:storage-status', () => storageInventory().summary);
 ipcMain.handle('studio:cleanup-storage', (_event, input) => cleanupStorage(input));
 ipcMain.handle('studio:detect-models', async () => {
+  if (activeModelDownload) throw new Error('模型正在下载，完成或取消后才能重新检测');
   await resetWorkersForModelChange();
   refreshModelLocations({ index: null, qwen: null });
   saveModelLocationState();
@@ -784,6 +793,7 @@ ipcMain.handle('studio:add-model-location', async (_event, requestedEngine) => {
   const engine = requestedEngine === 'index' ? 'index' : requestedEngine === 'qwen' ? 'qwen' : null;
   if (!engine) throw new Error('模型类型无效');
   if (activeJob) throw new Error('当前有生成任务运行，完成或停止后才能更改模型位置');
+  if (activeModelDownload) throw new Error('模型正在下载，完成或取消后才能更改模型位置');
   const result = await dialog.showOpenDialog(mainWindow, {
     title: engine === 'index' ? '添加 IndexTTS 2.5 模型位置' : '添加 Qwen3-TTS VoiceDesign 模型位置',
     properties: ['openDirectory']
@@ -793,8 +803,8 @@ ipcMain.handle('studio:add-model-location', async (_event, requestedEngine) => {
   const modelPath = findModelDirectory(engine, [selectedRoot]);
   if (!modelPath) {
     throw new Error(engine === 'index'
-      ? '所选目录中未检测到 IndexTTS 2.5（缺少 config.yaml）'
-      : '所选目录中未检测到 Qwen3-TTS VoiceDesign（缺少 config.json）');
+      ? '所选目录中的 IndexTTS 2.5 文件不完整，请使用一键下载补齐主模型和辅助模型'
+      : '所选目录中的 Qwen3-TTS VoiceDesign 文件不完整，请使用一键下载补齐模型');
   }
   await resetWorkersForModelChange();
   modelLocationState.manualRoots = uniqueDirectories([selectedRoot, ...modelLocationState.manualRoots]);
@@ -829,9 +839,12 @@ ipcMain.handle('studio:add-runtime-location', async () => {
 
 ipcMain.handle('studio:install-runtime', async () => {
   if (activeJob) throw new Error('当前有生成任务运行，完成或停止后才能安装运行环境');
+  if (activeModelDownload) throw new Error('当前正在下载模型，请等待完成或先取消下载');
+  if (runtimeInstallActive) throw new Error('运行环境正在安装，请勿重复操作');
   const report = (progress) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('studio:runtime-install-progress', progress);
   };
+  runtimeInstallActive = true;
   try {
     report({ stage: 'preparing', percent: 0, message: '正在准备安装运行环境' });
     const releaseRoot = app.isPackaged ? path.join(process.resourcesPath, 'release') : path.join(studioRoot, 'release');
@@ -874,6 +887,8 @@ ipcMain.handle('studio:install-runtime', async () => {
   } catch (error) {
     report({ stage: 'failed', percent: 0, message: error.message || '运行环境安装失败' });
     throw error;
+  } finally {
+    runtimeInstallActive = false;
   }
 });
 
@@ -881,6 +896,58 @@ ipcMain.handle('studio:open-model-download', async (_event, url) => {
   if (!isAllowedModelDownloadUrl(url)) throw new Error('不受信任的模型下载地址');
   await shell.openExternal(url);
   return true;
+});
+
+ipcMain.handle('studio:download-model', async (_event, requestedEngine) => {
+  const engine = requestedEngine === 'index' ? 'index' : requestedEngine === 'qwen' ? 'qwen' : null;
+  if (!engine) throw new Error('模型类型无效');
+  if (activeJob) throw new Error('当前有生成任务运行，完成或停止后才能下载模型');
+  if (runtimeInstallActive) throw new Error('当前正在安装运行环境，请等待安装完成后再下载模型');
+  if (activeModelDownload) throw new Error(`正在下载${activeModelDownload.engine === 'index' ? '音色克隆' : '音色设计'}模型`);
+  const targetRoot = engine === 'index'
+    ? path.join(modelRoot, 'IndexTTS-2.5')
+    : path.join(modelRoot, 'Qwen3-TTS-12Hz-1.7B-VoiceDesign');
+  const controller = new AbortController();
+  const report = (progress) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('studio:model-download-progress', progress);
+  };
+  activeModelDownload = { engine, controller, targetRoot };
+  try {
+    const prepared = await prepareModelDownload(engine, targetRoot, { signal: controller.signal, onProgress: report });
+    const response = await dialog.showMessageBox(mainWindow, {
+      type: 'question',
+      title: '下载完整模型',
+      message: `下载 ${prepared.label}？`,
+      detail: `完整大小：${formatDownloadBytes(prepared.total)}\n本次还需下载：${formatDownloadBytes(prepared.required)}\n保存位置：${prepared.targetRoot}\n\n已存在且完整的文件会直接复用，未完成文件可断点续传。`,
+      buttons: ['开始下载', '取消'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true
+    });
+    if (response.response !== 0) {
+      report({ engine, stage: 'cancelled', percent: 0, message: '已取消模型下载' });
+      return { cancelled: true };
+    }
+    const result = await downloadPreparedModel(prepared, { signal: controller.signal, onProgress: report });
+    await resetWorkersForModelChange();
+    const preferred = { ...modelLocationState.selected, [engine]: targetRoot };
+    refreshModelLocations(preferred, [targetRoot]);
+    saveModelLocationState();
+    return { cancelled: false, result, engines: engineStatus(), modelLocations: modelLocationSummary() };
+  } catch (error) {
+    const cancelled = controller.signal.aborted || /取消/.test(error.message);
+    report({ engine, stage: cancelled ? 'cancelled' : 'failed', percent: 0, message: cancelled ? '模型下载已取消，可稍后继续' : error.message });
+    if (cancelled) return { cancelled: true };
+    throw error;
+  } finally {
+    if (activeModelDownload?.controller === controller) activeModelDownload = null;
+  }
+});
+
+ipcMain.handle('studio:cancel-model-download', async (_event, requestedEngine) => {
+  if (!activeModelDownload || activeModelDownload.engine !== requestedEngine) return { cancelled: false };
+  activeModelDownload.controller.abort(new Error('用户取消了模型下载'));
+  return { cancelled: true };
 });
 
 ipcMain.handle('studio:pick-reference', async () => {
@@ -1266,7 +1333,12 @@ async function createWindow() {
       modelLocationControlsReady: ['qwen-settings', 'index-settings'].every((id) => {
         const card = document.getElementById(id);
         return card?.querySelector('.model-location-block code')
-          && [...card.querySelectorAll('.model-location-actions button')].map((button) => button.textContent.trim()).join(',') === '自动检测,添加位置';
+          && card.querySelector('.model-location-actions .model-download-start')?.textContent.trim() === '一键下载完整模型'
+          && card.querySelector('.model-location-actions .model-download-cancel')?.classList.contains('hidden')
+          && card.querySelector('.model-location-actions .model-download-button')?.textContent.trim() === '手动下载 ↗'
+          && card.querySelector('.model-download-progress')?.classList.contains('hidden')
+          && window.voiceStudio.downloadModel
+          && window.voiceStudio.cancelModelDownload;
       }),
       softwareRootOutputReady: /[\\\\/]outputs$/.test(document.querySelector('#artifact-root')?.textContent || ''),
       designProgressReady: document.querySelectorAll('#design-progress [data-design-step]').length === 5,
@@ -1374,7 +1446,7 @@ async function createWindow() {
   }
 }
 
-const singleInstance = app.requestSingleInstanceLock();
+const singleInstance = process.argv.includes('--smoke') || app.requestSingleInstanceLock();
 if (!singleInstance) {
   app.quit();
 } else {
@@ -1398,6 +1470,7 @@ let quitCleanupStarted = false;
 let quitCleanupFinished = false;
 app.on('before-quit', (event) => {
   for (const worker of workers.values()) worker.stopSync();
+  activeModelDownload?.controller.abort(new Error('应用正在关闭'));
   if (quitCleanupFinished) return;
   event.preventDefault();
   if (quitCleanupStarted) return;
