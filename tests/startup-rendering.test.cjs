@@ -30,3 +30,12 @@ test('completed model downloads hide their progress panels', () => {
   assert.match(app, /function modelDownloadProgressHidden\(download\)[\s\S]*\['idle', 'completed'\]\.includes\(download\?\.stage\)/);
   assert.match(app, /root\.classList\.toggle\('hidden', modelDownloadProgressHidden\(download\)\)/);
 });
+
+test('packaged workers launch from the actual asar-unpacked Python directory', () => {
+  const main = read('electron/main.cjs');
+  assert.match(main, /path\.join\(process\.resourcesPath, 'app\.asar\.unpacked', 'python'\)/);
+  assert.doesNotMatch(main, /'app\.asar\.unpacked', 'voice-studio', 'python'/);
+  assert.match(main, /if \(!exists\(this\.config\.python\)\) throw new Error/);
+  assert.match(main, /if \(!exists\(this\.config\.script\)\) throw new Error/);
+  assert.match(main, /if \(!exists\(pythonRoot\)\) throw new Error/);
+});

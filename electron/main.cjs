@@ -31,7 +31,7 @@ function loadDevelopmentLocations() {
 }
 const developmentLocations = loadDevelopmentLocations();
 const rendererRoot = path.join(studioRoot, 'src');
-const unpackedPythonRoot = path.join(process.resourcesPath, 'app.asar.unpacked', 'voice-studio', 'python');
+const unpackedPythonRoot = path.join(process.resourcesPath, 'app.asar.unpacked', 'python');
 const pythonRoot = app.isPackaged && fs.existsSync(unpackedPythonRoot)
   ? unpackedPythonRoot
   : path.join(studioRoot, 'python');
@@ -178,8 +178,8 @@ function engineStatus() {
     index: {
       id: 'indextts25',
       label: 'IndexTTS 2.5',
-      installed: exists(indexConfig.python) && packagedIndexDependencies && exists(indexConfig.repo) && isModelDirectory('index', indexConfig.model),
-      runtimeReady: exists(indexConfig.python) && packagedIndexDependencies && exists(indexConfig.repo),
+      installed: exists(indexConfig.python) && exists(indexConfig.script) && packagedIndexDependencies && exists(indexConfig.repo) && isModelDirectory('index', indexConfig.model),
+      runtimeReady: exists(indexConfig.python) && exists(indexConfig.script) && packagedIndexDependencies && exists(indexConfig.repo),
       modelReady: isModelDirectory('index', indexConfig.model),
       purpose: '音色克隆',
       modelPath: indexConfig.model,
@@ -190,8 +190,8 @@ function engineStatus() {
     qwen: {
       id: 'qwen3-tts-voicedesign',
       label: 'Qwen3-TTS 1.7B VoiceDesign',
-      installed: exists(qwenConfig.python) && packagedQwenDependencies && isModelDirectory('qwen', qwenConfig.model),
-      runtimeReady: exists(qwenConfig.python) && packagedQwenDependencies,
+      installed: exists(qwenConfig.python) && exists(qwenConfig.script) && packagedQwenDependencies && isModelDirectory('qwen', qwenConfig.model),
+      runtimeReady: exists(qwenConfig.python) && exists(qwenConfig.script) && packagedQwenDependencies,
       modelReady: isModelDirectory('qwen', qwenConfig.model),
       purpose: '音色设计',
       modelPath: qwenConfig.model,
@@ -302,6 +302,9 @@ class WorkerClient {
     clearTimeout(this.idleTimer);
     this.idleTimer = null;
     if (this.child && !this.child.killed) return;
+    if (!exists(this.config.python)) throw new Error(`运行环境缺少 Python：${this.config.python}`);
+    if (!exists(this.config.script)) throw new Error(`软件缺少引擎工作脚本：${this.config.script}`);
+    if (!exists(pythonRoot)) throw new Error(`引擎工作目录不存在：${pythonRoot}`);
     const args = ['-u', this.config.script, '--model', this.config.model];
     if (this.config.repo) args.push('--repo', this.config.repo);
     const child = spawn(this.config.python, args, {
