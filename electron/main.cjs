@@ -11,7 +11,8 @@ const { analyzeAudio, createReferenceCopy, configureAudioTools, resolveTool } = 
 const { discoverModels, findModelDirectory, uniqueDirectories } = require('./model-locations.cjs');
 const { createProductPaths } = require('./product-paths.cjs');
 const { createRuntimeLocations } = require('./runtime-locations.cjs');
-const { downloadRuntimeBundles, installRuntimeBundles, readManifest } = require('./runtime-installer.cjs');
+const { downloadRuntimeBundles, installRuntimeBundles, readManifest, removeDownloadedBundles } = require('./runtime-installer.cjs');
+const { detectBuildChannel } = require('./build-channel.cjs');
 
 const chromiumSessionRoot = path.join(app.getPath('userData'), 'chromium-session-v2');
 fs.mkdirSync(chromiumSessionRoot, { recursive: true });
@@ -176,7 +177,8 @@ function engineStatus() {
       purpose: '音色克隆',
       modelPath: indexConfig.model,
       defaultModelPath: path.join(modelRoot, 'IndexTTS-2.5'),
-      modelPathSource: modelPathSource('index', indexConfig.model)
+      modelPathSource: modelPathSource('index', indexConfig.model),
+      modelDownloadUrl: 'https://huggingface.co/IndexTeam/IndexTTS-2'
     },
     qwen: {
       id: 'qwen3-tts-voicedesign',
@@ -187,7 +189,8 @@ function engineStatus() {
       purpose: '音色设计',
       modelPath: qwenConfig.model,
       defaultModelPath: path.join(modelRoot, 'Qwen3-TTS-12Hz-1.7B-VoiceDesign'),
-      modelPathSource: modelPathSource('qwen', qwenConfig.model)
+      modelPathSource: modelPathSource('qwen', qwenConfig.model),
+      modelDownloadUrl: 'https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign'
     },
     runtime: { ...runtime, ffmpegReady }
   };
@@ -761,7 +764,7 @@ ipcMain.handle('studio:bootstrap', () => ({
   descriptionHistory: loadDescriptionHistory(),
   artifactRoot,
   modelLocations: modelLocationSummary(),
-  build: { channel: app.isPackaged ? 'alpha' : 'debug', version: app.getVersion(), title: '小沐音色工坊' },
+  build: { channel: detectBuildChannel({ isPackaged: app.isPackaged, version: app.getVersion() }), version: app.getVersion(), title: '小沐音色工坊' },
   busy: Boolean(activeJob)
 }));
 
@@ -832,8 +835,10 @@ ipcMain.handle('studio:install-runtime', async () => {
     const manifestPath = path.join(releaseRoot, 'runtime-assets.json');
     const manifest = readManifest(manifestPath);
     let bundleDirectory;
+    let downloadedBundles = false;
     if (manifest.downloadBaseUrl) {
       bundleDirectory = path.join(productDataRoot, 'downloads', 'runtime', manifest.version);
+      downloadedBundles = true;
       await downloadRuntimeBundles(manifest, bundleDirectory, report);
     } else {
       const result = await dialog.showOpenDialog(mainWindow, {
@@ -857,12 +862,26 @@ ipcMain.handle('studio:install-runtime', async () => {
     configureAudioTools([path.join(runtimeLocations.toolRoot, 'ffmpeg', 'bin')]);
     report({ stage: 'checking', percent: 99, message: '正在检测运行环境兼容性' });
     const runtime = await runtimeLocations.probe(true);
-    report({ stage: 'completed', percent: 100, message: runtime.compatible ? '公共运行环境安装完成' : '运行环境已安装，兼容性检测未通过' });
+    if (downloadedBundles) {
+      report({ stage: 'cleaning', percent: 99, message: '正在清理运行环境安装包' });
+      removeDownloadedBundles(productDataRoot, bundleDirectory);
+    }
+    report({ stage: 'completed', percent: 100, message: runtime.compatible ? '运行环境安装完成' : '运行环境已安装，兼容性检测未通过' });
     return { runtime, engines: engineStatus() };
   } catch (error) {
     report({ stage: 'failed', percent: 0, message: error.message || '运行环境安装失败' });
     throw error;
   }
+});
+
+ipcMain.handle('studio:open-model-download', async (_event, url) => {
+  const allowed = new Set([
+    'https://huggingface.co/IndexTeam/IndexTTS-2',
+    'https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign'
+  ]);
+  if (!allowed.has(url)) throw new Error('不受信任的模型下载地址');
+  await shell.openExternal(url);
+  return true;
 });
 
 ipcMain.handle('studio:pick-reference', async () => {

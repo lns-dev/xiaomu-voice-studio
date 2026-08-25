@@ -2116,6 +2116,52 @@
 .model-location-block code { padding: 0; background: transparent; }
 .model-location-block small { color: #6f7a92; font-size: 8px; word-break: break-all; }
 .model-location-actions { justify-content: flex-start; }
+.runtime-actions button,
+.model-location-actions button,
+.storage-card button {
+  position: relative;
+  transition: border-color .16s ease, background-color .16s ease, color .16s ease, transform .12s ease, box-shadow .16s ease;
+}
+.runtime-actions button:not(:disabled):hover,
+.model-location-actions button:not(:disabled):hover,
+.storage-card button:not(:disabled):hover {
+  color: #eeeaff;
+  border-color: #7563d2;
+  background: #24213b;
+  box-shadow: 0 5px 16px rgba(92, 72, 190, .18);
+  transform: translateY(-1px);
+}
+.runtime-actions button:not(:disabled):active,
+.model-location-actions button:not(:disabled):active,
+.storage-card button:not(:disabled):active {
+  transform: translateY(0) scale(.97);
+  box-shadow: none;
+}
+.runtime-actions button.is-working,
+.model-location-actions button.is-working,
+.storage-card button.is-working {
+  color: #bdb2ff;
+  border-color: #51458e;
+  background: #1c1930;
+  cursor: progress;
+  opacity: 1;
+}
+.runtime-actions button.is-working::before,
+.model-location-actions button.is-working::before,
+.storage-card button.is-working::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border: 1.5px solid rgba(189,178,255,.35);
+  border-top-color: #bdb2ff;
+  border-radius: 50%;
+  vertical-align: -1px;
+  animation: engine-button-spin .7s linear infinite;
+}
+@keyframes engine-button-spin { to { transform: rotate(360deg); } }
+.model-download-button { margin-left: auto; }
 .runtime-card { grid-column: 1 / -1; }
 .runtime-card .runtime-grid { display:grid; grid-template-columns:1fr auto; gap:12px; align-items:end; margin-top:16px; }
 .runtime-card .runtime-detail { border:1px solid #2c3448; border-radius:12px; padding:14px; background:#0c111b; }

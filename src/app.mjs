@@ -198,7 +198,7 @@ function renderEngineSettings() {
 function runtimeCard(runtime) {
   const fragment = document.createDocumentFragment();
   const marker = document.createElement('p'); marker.className = 'eyebrow'; marker.textContent = 'SHARED RUNTIME';
-  const heading = document.createElement('h3'); heading.textContent = '公共生成环境';
+  const heading = document.createElement('h3'); heading.textContent = '运行环境';
   const detail = document.createElement('div'); detail.className = 'runtime-detail';
   const stateLabel = document.createElement('b');
   const compatible = runtime?.compatible;
@@ -220,17 +220,18 @@ function runtimeCard(runtime) {
   const detect = document.createElement('button'); detect.type = 'button'; detect.className = 'secondary small'; detect.textContent = '检测兼容性';
   detect.disabled = !runtime?.ready;
   detect.addEventListener('click', async () => {
-    detect.disabled = true;
+    setButtonWorking(detect, true, '检测中…');
     try {
       const result = await window.voiceStudio.probeRuntime();
       state.bootstrap.engines = result.engines;
       renderEngineSettings();
-      showToast(result.runtime.compatible ? '公共运行环境检测通过' : `环境不兼容：${result.runtime.error || '版本或 CUDA 状态不符合要求'}`);
+      showToast(result.runtime.compatible ? '运行环境检测通过' : `环境不兼容：${result.runtime.error || '版本或 CUDA 状态不符合要求'}`);
     } catch (error) { showToast(`检测失败：${error.message}`); }
+    finally { setButtonWorking(detect, false); }
   });
   const add = document.createElement('button'); add.type = 'button'; add.className = 'secondary small'; add.textContent = '添加环境位置';
   add.addEventListener('click', async () => {
-    add.disabled = true;
+    setButtonWorking(add, true, '选择中…');
     try {
       const result = await window.voiceStudio.addRuntimeLocation();
       if (result) {
@@ -239,7 +240,7 @@ function runtimeCard(runtime) {
         showToast(result.runtime.compatible ? '运行环境已添加并通过检测' : `已添加，但不兼容：${result.runtime.error || '请检查版本和 CUDA'}`);
       }
     } catch (error) { showToast(`添加失败：${error.message}`); }
-    finally { add.disabled = false; }
+    finally { setButtonWorking(add, false); }
   });
   const install = document.createElement('button'); install.id = 'install-runtime'; install.type = 'button'; install.className = 'primary small';
   const installRunning = state.runtimeInstall.status === 'running';
@@ -252,7 +253,7 @@ function runtimeCard(runtime) {
       if (result) {
         state.bootstrap.engines = result.engines;
         renderEngineSettings();
-        showToast(result.runtime.compatible ? '公共运行环境安装完成' : `安装完成，但检测未通过：${result.runtime.error || '请查看环境状态'}`);
+        showToast(result.runtime.compatible ? '运行环境安装完成' : `安装完成，但检测未通过：${result.runtime.error || '请查看环境状态'}`);
       }
     } catch (error) {
       const message = normalizeRemoteError(error);
@@ -263,7 +264,7 @@ function runtimeCard(runtime) {
   actions.append(install, detect, add);
   const grid = document.createElement('div'); grid.className = 'runtime-grid'; grid.append(detail, actions);
   const progress = document.createElement('div'); progress.id = 'runtime-install-progress'; progress.className = 'runtime-install-progress';
-  progress.classList.toggle('hidden', state.runtimeInstall.status === 'idle');
+  progress.classList.toggle('hidden', state.runtimeInstall.status === 'idle' || state.runtimeInstall.status === 'completed');
   progress.classList.toggle('failed', state.runtimeInstall.status === 'failed');
   progress.classList.toggle('completed', state.runtimeInstall.status === 'completed');
   const progressHeader = document.createElement('div'); progressHeader.className = 'runtime-progress-head';
@@ -273,9 +274,18 @@ function runtimeCard(runtime) {
   const progressBar = document.createElement('progress'); progressBar.id = 'runtime-progress-bar'; progressBar.max = 100; progressBar.value = state.runtimeInstall.percent;
   const progressDetail = document.createElement('small'); progressDetail.id = 'runtime-progress-detail'; progressDetail.textContent = runtimeProgressDetail(state.runtimeInstall);
   progress.append(progressHeader, progressBar, progressDetail);
-  const note = document.createElement('p'); note.textContent = '两个引擎共用同一套 Python、PyTorch 与 CUDA 环境；软件只为各引擎加载各自的轻量依赖层。';
-  fragment.append(marker, heading, grid, locations, progress, note);
+  fragment.append(marker, heading, grid);
+  if (['debug', 'alpha'].includes(state.bootstrap?.build?.channel)) fragment.append(locations);
+  fragment.append(progress);
   return fragment;
+}
+
+function setButtonWorking(button, working, workingLabel = '处理中…') {
+  if (!button.dataset.idleLabel) button.dataset.idleLabel = button.textContent;
+  button.disabled = working;
+  button.classList.toggle('is-working', working);
+  button.setAttribute('aria-busy', String(working));
+  button.textContent = working ? workingLabel : button.dataset.idleLabel;
 }
 
 function normalizeRemoteError(error) {
@@ -290,7 +300,7 @@ function runtimeProgressDetail(progress) {
   }
   const labels = {
     preparing: '准备资源清单与安装目录', downloading: '下载运行环境资源', verifying: '校验下载文件完整性',
-    extracting: '解压并安装运行环境', finalizing: '提交安装结果', checking: '检测 Python、PyTorch 与 CUDA',
+    extracting: '解压并安装运行环境', finalizing: '提交安装结果', checking: '检测 Python、PyTorch 与 CUDA', cleaning: '删除已下载的压缩文件',
     completed: '安装与兼容性检测已完成', failed: '安装已停止，请根据错误信息重试'
   };
   return labels[progress.stage] || '';
@@ -309,7 +319,7 @@ function updateRuntimeInstallProgress(event) {
   };
   const root = $('#runtime-install-progress');
   if (!root) return;
-  root.classList.remove('hidden');
+  root.classList.toggle('hidden', stage === 'completed');
   root.classList.toggle('failed', state.runtimeInstall.status === 'failed');
   root.classList.toggle('completed', state.runtimeInstall.status === 'completed');
   $('#runtime-progress-message').textContent = state.runtimeInstall.message;
@@ -319,6 +329,8 @@ function updateRuntimeInstallProgress(event) {
   const install = $('#install-runtime');
   if (install) {
     install.disabled = state.runtimeInstall.status === 'running';
+    install.classList.toggle('is-working', state.runtimeInstall.status === 'running');
+    install.setAttribute('aria-busy', String(state.runtimeInstall.status === 'running'));
     install.textContent = state.runtimeInstall.status === 'running' ? `正在安装 ${percent}%` : '安装运行环境';
   }
 }
@@ -389,21 +401,29 @@ function engineCard(eyebrow, title, engine, engineKey) {
   const actions = document.createElement('div'); actions.className = 'model-location-actions';
   const detect = document.createElement('button'); detect.type = 'button'; detect.className = 'secondary small'; detect.textContent = '自动检测';
   detect.addEventListener('click', async () => {
-    detect.disabled = true;
+    setButtonWorking(detect, true, '检测中…');
     try { applyModelLocationResult(await window.voiceStudio.detectModels(), '模型位置检测完成'); }
     catch (error) { showToast(`检测失败：${error.message}`); }
-    finally { detect.disabled = false; }
+    finally { setButtonWorking(detect, false); }
   });
   const add = document.createElement('button'); add.type = 'button'; add.className = 'secondary small'; add.textContent = '添加位置';
   add.addEventListener('click', async () => {
-    add.disabled = true;
+    setButtonWorking(add, true, '选择中…');
     try {
       const result = await window.voiceStudio.addModelLocation(engineKey);
       if (result) applyModelLocationResult(result, '模型位置已添加');
     } catch (error) { showToast(`添加失败：${error.message}`); }
-    finally { add.disabled = false; }
+    finally { setButtonWorking(add, false); }
   });
-  actions.append(detect, add);
+  const download = document.createElement('button'); download.type = 'button'; download.className = 'secondary small model-download-button'; download.textContent = '下载模型 ↗';
+  download.title = '在浏览器中打开官方模型下载页面';
+  download.addEventListener('click', async () => {
+    setButtonWorking(download, true, '正在打开…');
+    try { await window.voiceStudio.openModelDownload(engine.modelDownloadUrl); }
+    catch (error) { showToast(`打开失败：${error.message}`); }
+    finally { setButtonWorking(download, false); }
+  });
+  actions.append(detect, add, download);
   fragment.append(marker, heading, status, location, detail, actions);
   return fragment;
 }
@@ -1546,10 +1566,16 @@ function installEvents() {
     if (!event.target.closest('#library-voice-picker') && !event.target.closest('#select-library-voice')) closeLibraryVoicePicker();
   });
   document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeLibraryVoicePicker(); });
-  $('#refresh-storage').addEventListener('click', refreshStorage);
-  const cleanupStorage = async (scope, label) => {
+  $('#refresh-storage').addEventListener('click', async () => {
+    const button = $('#refresh-storage');
+    setButtonWorking(button, true, '刷新中…');
+    try { await refreshStorage(); }
+    finally { setButtonWorking(button, false); }
+  });
+  const cleanupStorage = async (scope, label, trigger) => {
     if (!window.confirm(`确定将${label}移入回收站吗？此操作不会删除模型和音色库中已保存的音色。`)) return;
     const buttons = $$('.storage-actions button'); buttons.forEach((button) => { button.disabled = true; });
+    setButtonWorking(trigger, true, '清理中…');
     try {
       const result = await window.voiceStudio.cleanupStorage({ scope, currentOutput: state.result?.output ?? null });
       renderStorage(result.storage);
@@ -1559,10 +1585,14 @@ function installEvents() {
       showToast(`清理失败：${error.message}`);
       await refreshStorage();
     }
+    finally {
+      setButtonWorking(trigger, false);
+      if (state.storage) renderStorage(state.storage);
+    }
   };
-  $('#cleanup-temporary').addEventListener('click', () => cleanupStorage('temporary', '临时残片'));
-  $('#cleanup-orphan').addEventListener('click', () => cleanupStorage('orphan', '无记录文件'));
-  $('#cleanup-unsaved').addEventListener('click', () => cleanupStorage('unsaved', '所有未保存结果'));
+  $('#cleanup-temporary').addEventListener('click', (event) => cleanupStorage('temporary', '临时残片', event.currentTarget));
+  $('#cleanup-orphan').addEventListener('click', (event) => cleanupStorage('orphan', '无记录文件', event.currentTarget));
+  $('#cleanup-unsaved').addEventListener('click', (event) => cleanupStorage('unsaved', '所有未保存结果', event.currentTarget));
   renderVerticalWaveform($('#reference-waveform'));
   renderVerticalWaveform($('#emotion-reference-waveform'));
   setupReferenceTrimmer();

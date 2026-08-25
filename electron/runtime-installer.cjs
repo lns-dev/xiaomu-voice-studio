@@ -85,6 +85,15 @@ function safeRemove(root, candidate) {
   fs.rmSync(resolved, { recursive: true, force: true });
 }
 
+function removeDownloadedBundles(dataRoot, bundleDirectory) {
+  if (!bundleDirectory) return;
+  const downloadsRoot = path.join(dataRoot, 'downloads', 'runtime');
+  const resolved = path.resolve(bundleDirectory);
+  const relative = path.relative(downloadsRoot, resolved);
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('拒绝清理运行环境下载目录之外的文件');
+  safeRemove(downloadsRoot, resolved);
+}
+
 async function verifyComponentFiles(component, bundleDirectory, onProgress) {
   const files = Array.isArray(component?.files) ? component.files : [];
   if (!files.length) throw new Error('运行时资源清单缺少文件');
@@ -268,4 +277,4 @@ async function installRuntimeBundles(options) {
   }
 }
 
-module.exports = { downloadFile, downloadRuntimeBundles, hashFile, installRuntimeBundles, readManifest, runExtractor, validateExtractor, verifyComponentFiles };
+module.exports = { downloadFile, downloadRuntimeBundles, hashFile, installRuntimeBundles, readManifest, removeDownloadedBundles, runExtractor, validateExtractor, verifyComponentFiles };

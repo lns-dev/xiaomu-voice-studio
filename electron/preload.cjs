@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('voiceStudio', {
   probeRuntime: () => ipcRenderer.invoke('studio:probe-runtime'),
   addRuntimeLocation: () => ipcRenderer.invoke('studio:add-runtime-location'),
   installRuntime: () => ipcRenderer.invoke('studio:install-runtime'),
+  openModelDownload: (url) => ipcRenderer.invoke('studio:open-model-download', url),
   synthesizeClone: (request) => ipcRenderer.invoke('studio:synthesize-clone', request),
   synthesizeDesign: (request) => ipcRenderer.invoke('studio:synthesize-design', request),
   cancelActiveTask: () => ipcRenderer.invoke('studio:cancel-active'),

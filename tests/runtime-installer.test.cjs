@@ -4,7 +4,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { readManifest, validateExtractor, verifyComponentFiles } = require('../electron/runtime-installer.cjs');
+const { readManifest, removeDownloadedBundles, validateExtractor, verifyComponentFiles } = require('../electron/runtime-installer.cjs');
 
 test('ships a valid 7-Zip runtime extractor', async () => {
   await validateExtractor(path.resolve(__dirname, '..', 'release', 'tools', '7za.exe'));
@@ -26,4 +26,15 @@ test('rejects an invalid runtime manifest', () => {
   fs.writeFileSync(file, '{}');
   assert.throws(() => readManifest(file), /清单无效/);
   fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('removes downloaded runtime archives only from the managed download directory', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'voice-runtime-cleanup-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const bundle = path.join(root, 'downloads', 'runtime', 'test-version');
+  fs.mkdirSync(bundle, { recursive: true });
+  fs.writeFileSync(path.join(bundle, 'core.7z.001'), 'fixture');
+  removeDownloadedBundles(root, bundle);
+  assert.equal(fs.existsSync(bundle), false);
+  assert.throws(() => removeDownloadedBundles(root, path.join(root, 'models')), /拒绝清理/);
 });
