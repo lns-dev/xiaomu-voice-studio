@@ -92,6 +92,9 @@ function removeDownloadedBundles(dataRoot, bundleDirectory) {
   const relative = path.relative(downloadsRoot, resolved);
   if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('拒绝清理运行环境下载目录之外的文件');
   safeRemove(downloadsRoot, resolved);
+  for (const directory of [downloadsRoot, path.dirname(downloadsRoot)]) {
+    if (fs.existsSync(directory) && fs.readdirSync(directory).length === 0) fs.rmdirSync(directory);
+  }
 }
 
 async function verifyComponentFiles(component, bundleDirectory, onProgress) {

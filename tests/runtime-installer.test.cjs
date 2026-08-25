@@ -36,5 +36,6 @@ test('removes downloaded runtime archives only from the managed download directo
   fs.writeFileSync(path.join(bundle, 'core.7z.001'), 'fixture');
   removeDownloadedBundles(root, bundle);
   assert.equal(fs.existsSync(bundle), false);
+  assert.equal(fs.existsSync(path.join(root, 'downloads')), false);
   assert.throws(() => removeDownloadedBundles(root, path.join(root, 'models')), /拒绝清理/);
 });
