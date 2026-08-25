@@ -823,39 +823,46 @@ ipcMain.handle('studio:add-runtime-location', async () => {
 
 ipcMain.handle('studio:install-runtime', async () => {
   if (activeJob) throw new Error('当前有生成任务运行，完成或停止后才能安装运行环境');
-  const releaseRoot = app.isPackaged ? path.join(process.resourcesPath, 'release') : path.join(studioRoot, 'release');
-  const manifestPath = path.join(releaseRoot, 'runtime-assets.json');
-  const manifest = readManifest(manifestPath);
-  let bundleDirectory;
-  if (manifest.downloadBaseUrl) {
-    bundleDirectory = path.join(productDataRoot, 'downloads', 'runtime', manifest.version);
-    await downloadRuntimeBundles(manifest, bundleDirectory, (progress) => {
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('studio:runtime-install-progress', progress);
-    });
-  } else {
-    const result = await dialog.showOpenDialog(mainWindow, {
-      title: '选择已下载的运行时资源包目录',
-      properties: ['openDirectory']
-    });
-    if (result.canceled || !result.filePaths[0]) return null;
-    bundleDirectory = path.resolve(result.filePaths[0]);
-  }
-  await resetWorkersForModelChange();
-  const installed = await installRuntimeBundles({
-    manifestPath,
-    extractorPath: path.join(releaseRoot, 'tools', '7za.exe'),
-    bundleDirectory,
-    dataRoot: productDataRoot,
-    onProgress: (progress) => {
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('studio:runtime-install-progress', progress);
+  const report = (progress) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('studio:runtime-install-progress', progress);
+  };
+  try {
+    report({ stage: 'preparing', percent: 0, message: '正在准备安装运行环境' });
+    const releaseRoot = app.isPackaged ? path.join(process.resourcesPath, 'release') : path.join(studioRoot, 'release');
+    const manifestPath = path.join(releaseRoot, 'runtime-assets.json');
+    const manifest = readManifest(manifestPath);
+    let bundleDirectory;
+    if (manifest.downloadBaseUrl) {
+      bundleDirectory = path.join(productDataRoot, 'downloads', 'runtime', manifest.version);
+      await downloadRuntimeBundles(manifest, bundleDirectory, report);
+    } else {
+      const result = await dialog.showOpenDialog(mainWindow, {
+        title: '选择已下载的运行时资源包目录',
+        properties: ['openDirectory']
+      });
+      if (result.canceled || !result.filePaths[0]) return null;
+      bundleDirectory = path.resolve(result.filePaths[0]);
     }
-  });
-  runtimeLocations.add(path.join(productDataRoot, 'runtime', 'core'));
-  indexConfig.python = installed.python;
-  qwenConfig.python = installed.python;
-  configureAudioTools([path.join(runtimeLocations.toolRoot, 'ffmpeg', 'bin')]);
-  const runtime = await runtimeLocations.probe(true);
-  return { runtime, engines: engineStatus() };
+    await resetWorkersForModelChange();
+    const installed = await installRuntimeBundles({
+      manifestPath,
+      extractorPath: path.join(releaseRoot, 'tools', '7za.exe'),
+      bundleDirectory,
+      dataRoot: productDataRoot,
+      onProgress: report
+    });
+    runtimeLocations.add(path.join(productDataRoot, 'runtime', 'core'));
+    indexConfig.python = installed.python;
+    qwenConfig.python = installed.python;
+    configureAudioTools([path.join(runtimeLocations.toolRoot, 'ffmpeg', 'bin')]);
+    report({ stage: 'checking', percent: 99, message: '正在检测运行环境兼容性' });
+    const runtime = await runtimeLocations.probe(true);
+    report({ stage: 'completed', percent: 100, message: runtime.compatible ? '公共运行环境安装完成' : '运行环境已安装，兼容性检测未通过' });
+    return { runtime, engines: engineStatus() };
+  } catch (error) {
+    report({ stage: 'failed', percent: 0, message: error.message || '运行环境安装失败' });
+    throw error;
+  }
 });
 
 ipcMain.handle('studio:pick-reference', async () => {

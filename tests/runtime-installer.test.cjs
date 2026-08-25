@@ -4,7 +4,11 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { readManifest, verifyComponentFiles } = require('../electron/runtime-installer.cjs');
+const { readManifest, validateExtractor, verifyComponentFiles } = require('../electron/runtime-installer.cjs');
+
+test('ships a valid 7-Zip runtime extractor', async () => {
+  await validateExtractor(path.resolve(__dirname, '..', 'release', 'tools', '7za.exe'));
+});
 
 test('validates runtime bundle size and sha256', async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'voice-runtime-assets-'));

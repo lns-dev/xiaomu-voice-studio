@@ -6,7 +6,8 @@ const state = {
   bootstrap: null, reference: null, emotionReference: null, result: null, candidates: [], library: [], tasks: [], descriptionHistory: [], storage: null, logs: [],
   libraryQuery: '', libraryKind: 'all', librarySort: 'favorite',
   referenceTrim: { active: false, startSeconds: 0, endSeconds: 0, dragging: null },
-  progressErrors: { qwen: '', index: '' }
+  progressErrors: { qwen: '', index: '' },
+  runtimeInstall: { status: 'idle', stage: 'idle', percent: 0, message: '', received: 0, total: 0 }
 };
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -203,8 +204,18 @@ function runtimeCard(runtime) {
   const compatible = runtime?.compatible;
   stateLabel.textContent = !runtime?.ready ? '尚未检测到运行环境' : compatible === false ? '环境不兼容' : compatible === true ? '环境兼容' : '已发现，等待兼容性检测';
   stateLabel.style.color = compatible === true ? '#72deb0' : compatible === false ? '#ff9aa5' : '#e1bd86';
-  const location = document.createElement('span'); location.textContent = runtime?.python || '需要 Python 3.11、PyTorch 2.8 CUDA 12.8 与 Torchaudio 2.8';
-  detail.append(stateLabel, location);
+  const requirement = document.createElement('span'); requirement.textContent = runtime?.python || '需要 Python 3.11、PyTorch 2.8 CUDA 12.8 与 Torchaudio 2.8';
+  detail.append(stateLabel, requirement);
+  const locations = document.createElement('div'); locations.className = 'runtime-locations';
+  const managedLocation = document.createElement('p');
+  managedLocation.innerHTML = '<b>受管运行环境位置</b>';
+  const managedCode = document.createElement('code'); managedCode.textContent = runtime?.managedRuntimeRoot || '尚未确定';
+  managedLocation.append(managedCode);
+  const engineLocation = document.createElement('p');
+  engineLocation.innerHTML = '<b>引擎依赖位置</b>';
+  const engineCode = document.createElement('code'); engineCode.textContent = runtime?.engineRoot || '尚未确定';
+  engineLocation.append(engineCode);
+  locations.append(managedLocation, engineLocation);
   const actions = document.createElement('div'); actions.className = 'runtime-actions';
   const detect = document.createElement('button'); detect.type = 'button'; detect.className = 'secondary small'; detect.textContent = '检测兼容性';
   detect.disabled = !runtime?.ready;
@@ -230,9 +241,12 @@ function runtimeCard(runtime) {
     } catch (error) { showToast(`添加失败：${error.message}`); }
     finally { add.disabled = false; }
   });
-  const install = document.createElement('button'); install.type = 'button'; install.className = 'primary small'; install.textContent = '安装运行环境';
+  const install = document.createElement('button'); install.id = 'install-runtime'; install.type = 'button'; install.className = 'primary small';
+  const installRunning = state.runtimeInstall.status === 'running';
+  install.textContent = installRunning ? `正在安装 ${state.runtimeInstall.percent}%` : '安装运行环境';
+  install.disabled = installRunning;
   install.addEventListener('click', async () => {
-    install.disabled = true;
+    updateRuntimeInstallProgress({ stage: 'preparing', percent: 0, message: '正在准备安装运行环境' });
     try {
       const result = await window.voiceStudio.installRuntime();
       if (result) {
@@ -240,14 +254,73 @@ function runtimeCard(runtime) {
         renderEngineSettings();
         showToast(result.runtime.compatible ? '公共运行环境安装完成' : `安装完成，但检测未通过：${result.runtime.error || '请查看环境状态'}`);
       }
-    } catch (error) { showToast(`安装失败：${error.message}`); }
-    finally { install.disabled = false; }
+    } catch (error) {
+      const message = normalizeRemoteError(error);
+      updateRuntimeInstallProgress({ stage: 'failed', percent: 0, message });
+      showToast(`安装失败：${message}`);
+    }
   });
   actions.append(install, detect, add);
   const grid = document.createElement('div'); grid.className = 'runtime-grid'; grid.append(detail, actions);
+  const progress = document.createElement('div'); progress.id = 'runtime-install-progress'; progress.className = 'runtime-install-progress';
+  progress.classList.toggle('hidden', state.runtimeInstall.status === 'idle');
+  progress.classList.toggle('failed', state.runtimeInstall.status === 'failed');
+  progress.classList.toggle('completed', state.runtimeInstall.status === 'completed');
+  const progressHeader = document.createElement('div'); progressHeader.className = 'runtime-progress-head';
+  const progressMessage = document.createElement('b'); progressMessage.id = 'runtime-progress-message'; progressMessage.textContent = state.runtimeInstall.message || '准备安装';
+  const progressValue = document.createElement('output'); progressValue.id = 'runtime-progress-value'; progressValue.textContent = `${state.runtimeInstall.percent}%`;
+  progressHeader.append(progressMessage, progressValue);
+  const progressBar = document.createElement('progress'); progressBar.id = 'runtime-progress-bar'; progressBar.max = 100; progressBar.value = state.runtimeInstall.percent;
+  const progressDetail = document.createElement('small'); progressDetail.id = 'runtime-progress-detail'; progressDetail.textContent = runtimeProgressDetail(state.runtimeInstall);
+  progress.append(progressHeader, progressBar, progressDetail);
   const note = document.createElement('p'); note.textContent = '两个引擎共用同一套 Python、PyTorch 与 CUDA 环境；软件只为各引擎加载各自的轻量依赖层。';
-  fragment.append(marker, heading, grid, note);
+  fragment.append(marker, heading, grid, locations, progress, note);
   return fragment;
+}
+
+function normalizeRemoteError(error) {
+  return String(error?.message || error || '运行环境安装失败')
+    .replace(/^Error invoking remote method 'studio:install-runtime': Error:\s*/i, '')
+    .replace(/^Error:\s*/i, '');
+}
+
+function runtimeProgressDetail(progress) {
+  if (progress.total > 0 && progress.received >= 0 && ['downloading', 'verifying'].includes(progress.stage)) {
+    return `${formatBytes(progress.received)} / ${formatBytes(progress.total)}`;
+  }
+  const labels = {
+    preparing: '准备资源清单与安装目录', downloading: '下载运行环境资源', verifying: '校验下载文件完整性',
+    extracting: '解压并安装运行环境', finalizing: '提交安装结果', checking: '检测 Python、PyTorch 与 CUDA',
+    completed: '安装与兼容性检测已完成', failed: '安装已停止，请根据错误信息重试'
+  };
+  return labels[progress.stage] || '';
+}
+
+function updateRuntimeInstallProgress(event) {
+  const stage = event?.stage || 'preparing';
+  const percent = Math.max(0, Math.min(100, Number(event?.percent) || 0));
+  state.runtimeInstall = {
+    status: stage === 'completed' ? 'completed' : stage === 'failed' ? 'failed' : 'running',
+    stage,
+    percent,
+    message: event?.message || '正在安装运行环境',
+    received: Number(event?.received) || 0,
+    total: Number(event?.total) || 0
+  };
+  const root = $('#runtime-install-progress');
+  if (!root) return;
+  root.classList.remove('hidden');
+  root.classList.toggle('failed', state.runtimeInstall.status === 'failed');
+  root.classList.toggle('completed', state.runtimeInstall.status === 'completed');
+  $('#runtime-progress-message').textContent = state.runtimeInstall.message;
+  $('#runtime-progress-value').textContent = `${percent}%`;
+  $('#runtime-progress-bar').value = percent;
+  $('#runtime-progress-detail').textContent = runtimeProgressDetail(state.runtimeInstall);
+  const install = $('#install-runtime');
+  if (install) {
+    install.disabled = state.runtimeInstall.status === 'running';
+    install.textContent = state.runtimeInstall.status === 'running' ? `正在安装 ${percent}%` : '安装运行环境';
+  }
 }
 
 function applyModelLocationResult(result, message) {
@@ -1764,8 +1837,12 @@ function installEvents() {
     else if (event.type === 'failed') { if (event.engine === 'qwen') setDesignProgress(0, '设计任务失败', event.message || '请查看任务日志', 'failed'); if (event.engine === 'index') setCloneProgress(0, '克隆任务失败', event.message || '请查看任务日志', 'failed'); refreshWorkspaceData(); }
   });
   window.voiceStudio.onRuntimeInstallProgress((event) => {
-    appendLog(`运行环境：${event.message}${Number.isFinite(event.percent) ? `（${event.percent}%）` : ''}`);
-    showToast(event.message);
+    const previous = state.runtimeInstall;
+    updateRuntimeInstallProgress(event);
+    if (event.message !== previous.message || event.stage === 'completed' || event.stage === 'failed') {
+      appendLog(`运行环境：${event.message}${Number.isFinite(event.percent) ? `（${event.percent}%）` : ''}`);
+    }
+    if (event.stage === 'completed' || event.stage === 'failed') showToast(event.message);
   });
 }
 
