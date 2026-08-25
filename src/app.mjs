@@ -217,7 +217,7 @@ function runtimeCard(runtime) {
   engineLocation.append(engineCode);
   locations.append(managedLocation, engineLocation);
   const actions = document.createElement('div'); actions.className = 'runtime-actions';
-  const detect = document.createElement('button'); detect.type = 'button'; detect.className = 'secondary small'; detect.textContent = '检测兼容性';
+  const detect = document.createElement('button'); detect.type = 'button'; detect.className = 'secondary small'; detect.textContent = runtime?.compatible === null || runtime?.compatible === undefined ? '检测兼容性' : '重新检测';
   detect.disabled = !runtime?.ready;
   detect.addEventListener('click', async () => {
     setButtonWorking(detect, true, '检测中…');

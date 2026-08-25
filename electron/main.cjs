@@ -757,16 +757,20 @@ async function cleanupStorage(input) {
   return { removedCount: removed.length, protectedCurrent: candidates.length < inventory[scope].length, storage: storageInventory().summary };
 }
 
-ipcMain.handle('studio:bootstrap', () => ({
-  engines: engineStatus(),
-  library: loadLibrary().map((voice) => ({ ...voice, url: pathToFileURL(voice.output).href })),
-  tasks: loadTaskHistory().map(taskForRenderer),
-  descriptionHistory: loadDescriptionHistory(),
-  artifactRoot,
-  modelLocations: modelLocationSummary(),
-  build: { channel: detectBuildChannel({ isPackaged: app.isPackaged, version: app.getVersion() }), version: app.getVersion(), title: '小沐音色工坊' },
-  busy: Boolean(activeJob)
-}));
+ipcMain.handle('studio:bootstrap', async () => {
+  const runtime = runtimeLocations.summary();
+  if (runtime.ready) await runtimeLocations.probe(true);
+  return {
+    engines: engineStatus(),
+    library: loadLibrary().map((voice) => ({ ...voice, url: pathToFileURL(voice.output).href })),
+    tasks: loadTaskHistory().map(taskForRenderer),
+    descriptionHistory: loadDescriptionHistory(),
+    artifactRoot,
+    modelLocations: modelLocationSummary(),
+    build: { channel: detectBuildChannel({ isPackaged: app.isPackaged, version: app.getVersion() }), version: app.getVersion(), title: '小沐音色工坊' },
+    busy: Boolean(activeJob)
+  };
+});
 
 ipcMain.handle('studio:system-status', () => querySystemResources());
 ipcMain.handle('studio:storage-status', () => storageInventory().summary);
