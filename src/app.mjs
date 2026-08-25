@@ -21,6 +21,9 @@ const cloneStages = ['prepare', 'queued', 'loading_model', 'synthesizing', 'comp
 const lastSelectionKey = 'voiceStudio.lastSelection.v1';
 const systemStatusSnapshotKey = 'voiceStudio.systemStatus.v1';
 const storageStatusSnapshotKey = 'voiceStudio.storageStatus.v1';
+let engineWarmTimer = null;
+let workspaceRefreshPromise = null;
+let systemStatusPromise = null;
 const designParameterDefaults = Object.freeze({
   pace: 'relaxed', volume: 'normal', paceFactor: 0.85, volumeFactor: 1,
   temperature: 0.9, topP: 1, topK: 50, repetitionPenalty: 1.05, seed: -1, candidateCount: 1
@@ -54,6 +57,24 @@ function showPage(name) {
   $$('.page').forEach((page) => page.classList.toggle('active', page.id === `page-${name}`));
   $('#page-title').textContent = titles[name] ?? '音色工坊';
   closeDescriptionHistory();
+  scheduleEngineWarm(name);
+}
+
+function scheduleEngineWarm(pageName) {
+  clearTimeout(engineWarmTimer);
+  const engine = pageName === 'design' ? 'qwen' : pageName === 'clone' ? 'index' : null;
+  if (!engine || !state.bootstrap?.engines?.[engine]?.installed) return;
+  engineWarmTimer = setTimeout(async () => {
+    try {
+      const reference = engine === 'index' ? state.reference?.path ?? null : null;
+      const result = await window.voiceStudio.warmEngine(engine, reference);
+      if (result?.ready && !result.reused) {
+        appendLog(`${engine === 'qwen' ? '设计引擎' : result.referencePrepared ? '克隆引擎与参考音频' : '克隆引擎'}已在后台预热，下一次生成可直接进入推理`);
+      }
+    } catch {
+      // Page navigation and foreground generation may supersede background warm-up.
+    }
+  }, 650);
 }
 
 function appendLog(message) {
@@ -1185,6 +1206,7 @@ function setReference(reference, label = reference?.name || '选择参考音频'
   renderVerticalWaveform(waveform, reference?.analysis?.waveform);
   resetWaveformAudio(audio, $('#play-reference'), waveform, reference?.url);
   renderReferenceAnalysis(reference);
+  if (selected && $('#page-clone').classList.contains('active')) scheduleEngineWarm('clone');
 }
 
 function setEmotionReference(reference) {
@@ -1592,16 +1614,20 @@ function setupPrecisionRange(root) {
   return { range, setValue };
 }
 
-async function refreshWorkspaceData() {
-  const bootstrap = await window.voiceStudio.getBootstrap();
-  state.bootstrap = bootstrap;
-  state.library = bootstrap.library;
-  state.tasks = bootstrap.tasks;
-  state.descriptionHistory = bootstrap.descriptionHistory ?? [];
-  syncResultSaveState();
-  renderLibrary();
-  renderTaskHistory();
-  renderDescriptionHistory();
+function refreshWorkspaceData() {
+  if (workspaceRefreshPromise) return workspaceRefreshPromise;
+  workspaceRefreshPromise = (async () => {
+    const bootstrap = await window.voiceStudio.getBootstrap();
+    state.bootstrap = bootstrap;
+    state.library = bootstrap.library;
+    state.tasks = bootstrap.tasks;
+    state.descriptionHistory = bootstrap.descriptionHistory ?? [];
+    syncResultSaveState();
+    renderLibrary();
+    renderTaskHistory();
+    renderDescriptionHistory();
+  })().finally(() => { workspaceRefreshPromise = null; });
+  return workspaceRefreshPromise;
 }
 
 function renderSystemStatus(status) {
@@ -1635,7 +1661,12 @@ function restoreStatusSnapshots() {
 }
 
 async function pollSystemStatus() {
-  try { renderSystemStatus(await window.voiceStudio.getSystemStatus()); } catch { /* app may be closing */ }
+  if (document.visibilityState === 'hidden' || systemStatusPromise) return systemStatusPromise;
+  systemStatusPromise = window.voiceStudio.getSystemStatus()
+    .then(renderSystemStatus)
+    .catch(() => { /* app may be closing */ })
+    .finally(() => { systemStatusPromise = null; });
+  return systemStatusPromise;
 }
 
 function setResult(result, name, kind, source = '当前结果', persist = true) {

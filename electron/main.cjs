@@ -90,6 +90,7 @@ const approvedOutputs = new Set();
 const workers = new Map();
 const taskkillPath = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'taskkill.exe');
 const workerTaskTimeoutMs = 30 * 60 * 1000;
+const workerIdleTimeoutMs = 10 * 60 * 1000;
 
 function exists(filePath) {
   try { return fs.existsSync(filePath); } catch { return false; }
@@ -296,6 +297,8 @@ class WorkerClient {
     this.pending = new Map();
     this.modelLoaded = false;
     this.idleTimer = null;
+    this.warmPromise = null;
+    this.warmedReference = null;
   }
 
   start() {
@@ -326,6 +329,8 @@ class WorkerClient {
       for (const entry of this.pending.values()) { clearTimeout(entry.timer); entry.reject(error); }
       this.pending.clear();
       this.child = null;
+      this.modelLoaded = false;
+      this.warmedReference = null;
     });
     child.on('exit', (code, signal) => {
       if (this.child !== child) return;
@@ -334,6 +339,7 @@ class WorkerClient {
       this.pending.clear();
       this.child = null;
       this.modelLoaded = false;
+      this.warmedReference = null;
       if (activeWorker === this) activeWorker = null;
     });
   }
@@ -346,9 +352,11 @@ class WorkerClient {
     }
     let message;
     try { message = JSON.parse(line.slice(prefix.length)); } catch { return; }
-    if (message.type === 'progress') emitTaskEvent({ ...message, engine: this.engine });
-    if (message.type === 'progress' && message.stage === 'model_ready') this.modelLoaded = true;
     const pending = message.id ? this.pending.get(message.id) : null;
+    if (message.type === 'progress') {
+      if (message.stage === 'model_ready') this.modelLoaded = true;
+      if (!pending?.silentProgress) emitTaskEvent({ ...message, engine: this.engine });
+    }
     if (!pending) return;
     if (message.type === 'result') {
       this.pending.delete(message.id);
@@ -368,14 +376,14 @@ class WorkerClient {
     clearTimeout(this.idleTimer);
     this.idleTimer = setTimeout(() => {
       if (this.pending.size || !this.child) return;
-      emitTaskEvent({ type: 'log', engine: this.engine, level: 'info', message: '引擎空闲 2 分钟，已自动卸载并释放显存' });
+      emitTaskEvent({ type: 'log', engine: this.engine, level: 'info', message: '引擎空闲 10 分钟，已自动卸载并释放显存' });
       this.stop();
-    }, 120000);
+    }, workerIdleTimeoutMs);
   }
 
-  run(command) {
+  run(command, options = {}) {
     this.start();
-    activeWorker = this;
+    if (!options.background) activeWorker = this;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         const pending = this.pending.get(command.id);
@@ -387,11 +395,26 @@ class WorkerClient {
         const pid = this.child?.pid;
         this.child = null;
         this.modelLoaded = false;
+        this.warmedReference = null;
         if (pid) terminateProcessTree(pid);
       }, workerTaskTimeoutMs);
-      this.pending.set(command.id, { resolve, reject, timer });
+      this.pending.set(command.id, { resolve, reject, timer, silentProgress: Boolean(options.silentProgress) });
       this.child.stdin.write(`${JSON.stringify(command)}\n`, 'utf8');
     });
+  }
+
+  warm(reference = null) {
+    const normalizedReference = reference ? path.resolve(reference).toLowerCase() : null;
+    const fullyWarm = this.modelLoaded && (this.engine !== 'index' || !normalizedReference || this.warmedReference === normalizedReference);
+    if (fullyWarm) return Promise.resolve({ ready: true, reused: true, referencePrepared: Boolean(normalizedReference) });
+    if (this.warmPromise) return this.warmPromise.then(() => this.warm(reference));
+    this.warmPromise = this.run({ id: crypto.randomUUID(), type: 'warmup', reference }, { background: true, silentProgress: true })
+      .then((result) => {
+        if (this.engine === 'index' && normalizedReference && result.referencePrepared) this.warmedReference = normalizedReference;
+        return result;
+      })
+      .finally(() => { this.warmPromise = null; });
+    return this.warmPromise;
   }
 
   async stop() {
@@ -405,6 +428,7 @@ class WorkerClient {
     this.pending.clear();
     this.child = null;
     this.modelLoaded = false;
+    this.warmedReference = null;
     await terminateProcessTree(pid);
   }
 
@@ -417,6 +441,7 @@ class WorkerClient {
     const pid = this.child.pid;
     this.child = null;
     this.modelLoaded = false;
+    this.warmedReference = null;
     terminateProcessTreeSync(pid);
   }
 }
@@ -583,6 +608,7 @@ async function runExclusive(engine, request) {
   }
   const worker = getWorker(engine);
   if (!worker.child || !worker.modelLoaded) await enforceColdStartResources(engine);
+  const joiningWarmup = Boolean(worker.warmPromise && !worker.modelLoaded);
   const effectiveRequest = request.seed === -1
     ? { ...request, requestedSeed: -1, seed: crypto.randomInt(0, 2147483648) }
     : request;
@@ -605,6 +631,9 @@ async function runExclusive(engine, request) {
     createdAt: new Date().toISOString()
   });
   emitTaskEvent({ type: 'progress', id, engine, stage: 'queued', percent: 5, message: '任务已进入本地 GPU 队列' });
+  if (joiningWarmup) {
+    emitTaskEvent({ type: 'progress', id, engine, stage: 'loading_model', percent: 12, message: '正在等待后台预热完成，随后立即生成' });
+  }
   const heartbeatTimer = setInterval(() => {
     if (activeJob?.id !== id) return;
     emitTaskEvent({ type: 'heartbeat', id, engine, elapsedSeconds: Math.round((Date.now() - activeJob.startedAt) / 1000) });
@@ -785,6 +814,27 @@ ipcMain.handle('studio:bootstrap', async () => {
 ipcMain.handle('studio:system-status', () => querySystemResources());
 ipcMain.handle('studio:storage-status', () => storageInventory().summary);
 ipcMain.handle('studio:cleanup-storage', (_event, input) => cleanupStorage(input));
+ipcMain.handle('studio:warm-engine', async (_event, requestedEngine, requestedReference) => {
+  const engine = requestedEngine === 'index' ? 'index' : requestedEngine === 'qwen' ? 'qwen' : null;
+  if (!engine) throw new Error('引擎类型无效');
+  const reference = engine === 'index' && requestedReference ? path.resolve(requestedReference) : null;
+  if (reference && (!approvedReferences.has(reference.toLowerCase()) || !exists(reference))) {
+    throw new Error('预热使用的参考音频未经应用选择');
+  }
+  if (activeJob || activeModelDownload || runtimeInstallActive) return { ready: false, reason: 'busy' };
+  const status = engineStatus()[engine];
+  if (!status.installed) return { ready: false, reason: 'not-installed' };
+  for (const [otherEngine, otherWorker] of workers.entries()) {
+    if (otherEngine !== engine && otherWorker.child) await otherWorker.stop();
+  }
+  if (activeJob) return { ready: false, reason: 'busy' };
+  const worker = getWorker(engine);
+  const reused = Boolean(worker.child && worker.modelLoaded);
+  if (!worker.child) await enforceColdStartResources(engine);
+  if (activeJob) return { ready: false, reason: 'busy' };
+  const result = await worker.warm(reference);
+  return { ready: true, reused, referencePrepared: Boolean(result.referencePrepared) };
+});
 ipcMain.handle('studio:detect-models', async () => {
   if (activeModelDownload) throw new Error('模型正在下载，完成或取消后才能重新检测');
   await resetWorkersForModelChange();
