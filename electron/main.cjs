@@ -9,6 +9,7 @@ const { pathToFileURL } = require('node:url');
 const { validateCloneRequest, validateDesignRequest } = require('./contract.cjs');
 const { analyzeAudio, createReferenceCopy, configureAudioTools, resolveTool } = require('./audio-tools.cjs');
 const { discoverModels, findModelDirectory, uniqueDirectories } = require('./model-locations.cjs');
+const { createProductPaths } = require('./product-paths.cjs');
 const { createRuntimeLocations } = require('./runtime-locations.cjs');
 const { downloadRuntimeBundles, installRuntimeBundles, readManifest } = require('./runtime-installer.cjs');
 
@@ -29,11 +30,14 @@ const pythonRoot = app.isPackaged && fs.existsSync(unpackedPythonRoot)
   ? unpackedPythonRoot
   : path.join(studioRoot, 'python');
 const softwareRoot = app.isPackaged ? path.dirname(process.execPath) : studioRoot;
-const productDataRoot = app.isPackaged
-  ? path.join(process.env.LOCALAPPDATA || app.getPath('appData'), 'XiaoMuVoiceStudio')
-  : studioRoot;
-const artifactRoot = path.join(productDataRoot, 'outputs');
-const modelRoot = path.join(productDataRoot, 'models');
+// User-facing assets belong beside the installed application. This keeps
+// models, generated audio and the managed runtime together when a custom
+// installation directory is selected.
+const { productDataRoot, artifactRoot, modelRoot } = createProductPaths({
+  isPackaged: app.isPackaged,
+  softwareRoot,
+  developmentRoot: studioRoot
+});
 const legacyArtifactRoot = developmentLocations.legacyArtifactRoot;
 const legacyModelRoot = developmentLocations.legacyModelRoot;
 const managedArtifactRoots = uniqueDirectories([artifactRoot, ...(!app.isPackaged ? [legacyArtifactRoot] : [])]);
