@@ -7,13 +7,16 @@ const state = {
   libraryQuery: '', libraryKind: 'all', librarySort: 'favorite',
   referenceTrim: { active: false, startSeconds: 0, endSeconds: 0, dragging: null },
   progressErrors: { qwen: '', index: '' },
-  runtimeInstall: { status: 'idle', stage: 'idle', percent: 0, message: '', received: 0, total: 0 }
+  runtimeInstall: { status: 'idle', stage: 'idle', percent: 0, message: '', received: 0, total: 0 },
+  runtimeProbe: { status: 'idle' }
 };
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 const designStages = ['prepare', 'queued', 'loading_model', 'synthesizing', 'completed'];
 const cloneStages = ['prepare', 'queued', 'loading_model', 'synthesizing', 'completed'];
 const lastSelectionKey = 'voiceStudio.lastSelection.v1';
+const systemStatusSnapshotKey = 'voiceStudio.systemStatus.v1';
+const storageStatusSnapshotKey = 'voiceStudio.storageStatus.v1';
 const designParameterDefaults = Object.freeze({
   pace: 'relaxed', volume: 'normal', paceFactor: 0.85, volumeFactor: 1,
   temperature: 0.9, topP: 1, topK: 50, repetitionPenalty: 1.05, seed: -1, candidateCount: 1
@@ -195,6 +198,33 @@ function renderEngineSettings() {
   $('#artifact-root').textContent = state.bootstrap.artifactRoot;
 }
 
+function syncEngineAvailability() {
+  const { qwen, index } = state.bootstrap.engines;
+  setEnginePill($('#qwen-pill'), qwen.installed);
+  setEnginePill($('#index-pill'), index.installed);
+  $('#design-submit').disabled = !qwen.installed;
+  $('#clone-submit').disabled = !index.installed;
+  const qwenNotice = $('#qwen-notice');
+  qwenNotice.textContent = qwen.installed ? '本地音色设计引擎已就绪' : '音色设计引擎尚未安装；请前往“引擎设置”查看详情。';
+  qwenNotice.classList.toggle('ready', qwen.installed);
+  qwenNotice.classList.toggle('offline', !qwen.installed);
+}
+
+async function probeRuntimeInBackground() {
+  try {
+    const result = await window.voiceStudio.probeRuntime();
+    state.bootstrap.engines = result.engines;
+    state.runtimeProbe.status = 'idle';
+    syncEngineAvailability();
+    renderEngineSettings();
+    appendLog(result.runtime.compatible ? '运行环境：后台兼容性检测通过' : `运行环境：后台检测未通过（${result.runtime.error || '版本或 CUDA 状态不符合要求'}）`);
+  } catch (error) {
+    state.runtimeProbe.status = 'failed';
+    renderEngineSettings();
+    appendLog(`运行环境：后台检测失败（${error.message}）`);
+  }
+}
+
 function runtimeCard(runtime) {
   const fragment = document.createDocumentFragment();
   const marker = document.createElement('p'); marker.className = 'eyebrow'; marker.textContent = 'SHARED RUNTIME';
@@ -202,7 +232,8 @@ function runtimeCard(runtime) {
   const detail = document.createElement('div'); detail.className = 'runtime-detail';
   const stateLabel = document.createElement('b');
   const compatible = runtime?.compatible;
-  stateLabel.textContent = !runtime?.ready ? '尚未检测到运行环境' : compatible === false ? '环境不兼容' : compatible === true ? '环境兼容' : '已发现，等待兼容性检测';
+  const checking = state.runtimeProbe.status === 'checking';
+  stateLabel.textContent = !runtime?.ready ? '尚未检测到运行环境' : checking ? '已发现，正在后台确认兼容性' : compatible === false ? '环境不兼容' : compatible === true ? '环境兼容' : '已发现，可检测兼容性';
   stateLabel.style.color = compatible === true ? '#72deb0' : compatible === false ? '#ff9aa5' : '#e1bd86';
   const requirement = document.createElement('span'); requirement.textContent = runtime?.python || '需要 Python 3.11、PyTorch 2.8 CUDA 12.8 与 Torchaudio 2.8';
   detail.append(stateLabel, requirement);
@@ -217,9 +248,11 @@ function runtimeCard(runtime) {
   engineLocation.append(engineCode);
   locations.append(managedLocation, engineLocation);
   const actions = document.createElement('div'); actions.className = 'runtime-actions';
-  const detect = document.createElement('button'); detect.type = 'button'; detect.className = 'secondary small'; detect.textContent = runtime?.compatible === null || runtime?.compatible === undefined ? '检测兼容性' : '重新检测';
+  const detect = document.createElement('button'); detect.type = 'button'; detect.className = 'secondary small'; detect.textContent = checking ? '检测中…' : runtime?.compatible === null || runtime?.compatible === undefined ? '检测兼容性' : '重新检测';
   detect.title = '重新检查 Python、PyTorch、Torchaudio 与 CUDA 兼容性';
-  detect.disabled = !runtime?.ready;
+  detect.disabled = !runtime?.ready || checking;
+  detect.classList.toggle('is-working', checking);
+  detect.setAttribute('aria-busy', String(checking));
   detect.addEventListener('click', async () => {
     setButtonWorking(detect, true, '检测中…');
     try {
@@ -375,6 +408,7 @@ function renderStorage(storage) {
     const button = $(buttonSelector);
     if (button) button.disabled = metric.count === 0;
   }
+  try { localStorage.setItem(storageStatusSnapshotKey, JSON.stringify(storage)); } catch { /* optional cache */ }
 }
 
 async function refreshStorage() {
@@ -1501,6 +1535,18 @@ function renderSystemStatus(status) {
   $('#settings-gpu').textContent = gpu.available ? gpu.name : '不可用';
   $('#settings-vram').textContent = gpu.available ? `已用 ${used} MiB，可用 ${gpu.freeMiB} MiB` : '--';
   $('#settings-ram').textContent = `已用 ${ramUsed.toFixed(2)} GiB，可用 ${status.memory.freeGiB.toFixed(2)} GiB`;
+  try { localStorage.setItem(systemStatusSnapshotKey, JSON.stringify(status)); } catch { /* optional cache */ }
+}
+
+function restoreStatusSnapshots() {
+  try {
+    const system = JSON.parse(localStorage.getItem(systemStatusSnapshotKey));
+    if (system?.gpu && system?.memory) renderSystemStatus(system);
+  } catch { /* no valid previous system status */ }
+  try {
+    const storage = JSON.parse(localStorage.getItem(storageStatusSnapshotKey));
+    if (storage) renderStorage(storage);
+  } catch { /* no valid previous storage status */ }
 }
 
 async function pollSystemStatus() {
@@ -1879,6 +1925,7 @@ function installEvents() {
 
 async function bootstrap() {
   installEvents();
+  restoreStatusSnapshots();
   state.bootstrap = await window.voiceStudio.getBootstrap();
   state.library = state.bootstrap.library;
   state.tasks = state.bootstrap.tasks;
@@ -1886,18 +1933,16 @@ async function bootstrap() {
   document.title = state.bootstrap.build?.channel === 'debug' ? '小沐音色工坊 · Debug' : '小沐音色工坊';
   $('#debug-badge')?.classList.toggle('hidden', state.bootstrap.build?.channel !== 'debug');
   restoreLastSelection();
-  const { qwen, index } = state.bootstrap.engines;
-  setEnginePill($('#qwen-pill'), qwen.installed); setEnginePill($('#index-pill'), index.installed);
-  const qwenNotice = $('#qwen-notice');
-  qwenNotice.textContent = qwen.installed ? '本地音色设计引擎已就绪' : '音色设计引擎尚未安装；请前往“引擎设置”查看详情。';
-  qwenNotice.classList.add(qwen.installed ? 'ready' : 'offline');
-  $('#design-submit').disabled = !qwen.installed;
-  $('#clone-submit').disabled = !index.installed;
+  const { qwen, index, runtime } = state.bootstrap.engines;
+  const shouldProbeRuntime = runtime.ready && (runtime.compatible === null || runtime.compatible === undefined);
+  state.runtimeProbe.status = shouldProbeRuntime ? 'checking' : 'idle';
+  syncEngineAvailability();
   renderEngineSettings(); renderLibrary(); renderTaskHistory(); renderDescriptionHistory();
   appendLog(`克隆引擎：${index.installed ? '已就绪' : '未安装'}`);
   appendLog(`设计引擎：${qwen.installed ? '已就绪' : '未安装'}`);
-  await pollSystemStatus();
-  await refreshStorage();
+  void pollSystemStatus();
+  void refreshStorage();
+  if (shouldProbeRuntime) void probeRuntimeInBackground();
   setInterval(pollSystemStatus, 5000);
 }
 

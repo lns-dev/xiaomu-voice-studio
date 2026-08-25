@@ -759,8 +759,6 @@ async function cleanupStorage(input) {
 }
 
 ipcMain.handle('studio:bootstrap', async () => {
-  const runtime = runtimeLocations.summary();
-  if (runtime.ready) await runtimeLocations.probe(true);
   return {
     engines: engineStatus(),
     library: loadLibrary().map((voice) => ({ ...voice, url: pathToFileURL(voice.output).href })),

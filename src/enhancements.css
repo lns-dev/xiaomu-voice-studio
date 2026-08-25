@@ -2163,6 +2163,9 @@
 @keyframes engine-button-spin { to { transform: rotate(360deg); } }
 .model-download-button { margin-left: auto; }
 .runtime-card { grid-column: 1 / -1; }
+.settings-card-loading { min-height:82px; margin-top:18px; border:1px solid #2c3448; border-radius:12px; background:#0c111b; display:flex; align-items:center; justify-content:center; gap:10px; color:#7e899f; font-size:11px; }
+.settings-card-loading i { width:7px; height:7px; border-radius:50%; background:#8068ff; box-shadow:0 0 10px rgba(128,104,255,.75); animation:settings-loading-pulse 1.2s ease-in-out infinite; }
+@keyframes settings-loading-pulse { 50% { opacity:.35; transform:scale(.72); } }
 .runtime-card .runtime-grid { display:grid; grid-template-columns:1fr auto; gap:12px; align-items:end; margin-top:16px; }
 .runtime-card .runtime-detail { border:1px solid #2c3448; border-radius:12px; padding:14px; background:#0c111b; }
 .runtime-card .runtime-detail b,.runtime-card .runtime-detail span { display:block; }
