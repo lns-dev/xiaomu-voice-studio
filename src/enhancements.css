@@ -2241,6 +2241,18 @@
 .runtime-install-progress.completed progress::-webkit-progress-value { background:linear-gradient(90deg,#3da77b,#6ed5a7); }
 .runtime-install-progress small { color:#7f8aa2; font-size:9px; }
 
+.idle-policy-card { grid-column:1 / -1; display:flex; flex-direction:column; }
+.idle-policy-card > p:not(.eyebrow) { margin:12px 0 16px; }
+.idle-policy-form { display:grid; grid-template-columns:minmax(240px,300px) auto; justify-content:start; gap:10px; align-items:end; }
+.idle-policy-form label { display:grid; gap:7px; color:#aab3c7; font-size:10px; }
+.idle-policy-input { display:grid; grid-template-columns:minmax(88px,130px) auto; gap:9px; align-items:center; }
+.idle-policy-input input { width:100%; min-height:38px; padding:8px 10px; border:1px solid #30384c; border-radius:9px; outline:none; color:#ecefff; background:#0b1019; font:700 12px/1 Consolas,monospace; }
+.idle-policy-input input:hover { border-color:#47516b; }
+.idle-policy-input input:focus { border-color:#715be8; box-shadow:0 0 0 3px rgba(113,91,232,.12); }
+.idle-policy-input span { color:#818ba1; font-size:10px; }
+.idle-policy-form .secondary { min-width:68px; min-height:38px; }
+.idle-policy-card > small { display:block; margin-top:11px; color:#727d94; font-size:9px; line-height:1.55; }
+
 .reference-audio-hidden { display: none; }
 
 .inline-progress-detail {

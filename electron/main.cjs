@@ -90,7 +90,9 @@ const approvedOutputs = new Set();
 const workers = new Map();
 const taskkillPath = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'taskkill.exe');
 const workerTaskTimeoutMs = 30 * 60 * 1000;
-const workerIdleTimeoutMs = 10 * 60 * 1000;
+const defaultWorkerIdleMinutes = 10;
+const minimumWorkerIdleMinutes = 1;
+const maximumWorkerIdleMinutes = 120;
 
 function exists(filePath) {
   try { return fs.existsSync(filePath); } catch { return false; }
@@ -108,6 +110,36 @@ function isUnderManagedArtifactRoot(candidate) {
 
 function modelLocationsPath() {
   return path.join(app.getPath('userData'), 'model-locations.json');
+}
+
+function preferencesPath() {
+  return path.join(app.getPath('userData'), 'preferences.json');
+}
+
+function normalizeWorkerIdleMinutes(value) {
+  const minutes = Number(value);
+  return Number.isInteger(minutes) && minutes >= minimumWorkerIdleMinutes && minutes <= maximumWorkerIdleMinutes
+    ? minutes
+    : defaultWorkerIdleMinutes;
+}
+
+function loadPreferences() {
+  try {
+    const stored = JSON.parse(fs.readFileSync(preferencesPath(), 'utf8'));
+    return { workerIdleMinutes: normalizeWorkerIdleMinutes(stored?.workerIdleMinutes) };
+  } catch {
+    return { workerIdleMinutes: defaultWorkerIdleMinutes };
+  }
+}
+
+let studioPreferences = loadPreferences();
+
+function preferenceSummary() {
+  return {
+    workerIdleMinutes: studioPreferences.workerIdleMinutes,
+    workerIdleMinimumMinutes: minimumWorkerIdleMinutes,
+    workerIdleMaximumMinutes: maximumWorkerIdleMinutes
+  };
 }
 
 function loadModelLocationState() {
@@ -374,11 +406,12 @@ class WorkerClient {
 
   scheduleIdleStop() {
     clearTimeout(this.idleTimer);
+    const idleMinutes = studioPreferences.workerIdleMinutes;
     this.idleTimer = setTimeout(() => {
       if (this.pending.size || !this.child) return;
-      emitTaskEvent({ type: 'log', engine: this.engine, level: 'info', message: '引擎空闲 10 分钟，已自动卸载并释放显存' });
+      emitTaskEvent({ type: 'log', engine: this.engine, level: 'info', message: `引擎空闲 ${idleMinutes} 分钟，已自动卸载并释放显存` });
       this.stop();
-    }, workerIdleTimeoutMs);
+    }, idleMinutes * 60 * 1000);
   }
 
   run(command, options = {}) {
@@ -806,6 +839,7 @@ ipcMain.handle('studio:bootstrap', async () => {
     descriptionHistory: loadDescriptionHistory(),
     artifactRoot,
     modelLocations: modelLocationSummary(),
+    preferences: preferenceSummary(),
     build: { channel: detectBuildChannel({ isPackaged: app.isPackaged, version: app.getVersion() }), version: app.getVersion(), title: '小沐音色工坊' },
     busy: Boolean(activeJob)
   };
@@ -814,6 +848,18 @@ ipcMain.handle('studio:bootstrap', async () => {
 ipcMain.handle('studio:system-status', () => querySystemResources());
 ipcMain.handle('studio:storage-status', () => storageInventory().summary);
 ipcMain.handle('studio:cleanup-storage', (_event, input) => cleanupStorage(input));
+ipcMain.handle('studio:set-worker-idle-minutes', (_event, requestedMinutes) => {
+  const minutes = Number(requestedMinutes);
+  if (!Number.isInteger(minutes) || minutes < minimumWorkerIdleMinutes || minutes > maximumWorkerIdleMinutes) {
+    throw new Error(`空闲释放时间必须是 ${minimumWorkerIdleMinutes}–${maximumWorkerIdleMinutes} 分钟的整数`);
+  }
+  studioPreferences = { ...studioPreferences, workerIdleMinutes: minutes };
+  atomicWriteJson(preferencesPath(), studioPreferences);
+  for (const worker of workers.values()) {
+    if (worker.child && worker.pending.size === 0) worker.scheduleIdleStop();
+  }
+  return preferenceSummary();
+});
 ipcMain.handle('studio:warm-engine', async (_event, requestedEngine, requestedReference) => {
   const engine = requestedEngine === 'index' ? 'index' : requestedEngine === 'qwen' ? 'qwen' : null;
   if (!engine) throw new Error('引擎类型无效');
@@ -1230,6 +1276,8 @@ async function createWindow() {
       const image = await window.webContents.capturePage();
       fs.writeFileSync(path.join(smokeRoot, `voice-studio-${page}.png`), image.toPNG());
     }
+    await window.webContents.executeJavaScript(`document.querySelector('#worker-idle-minutes').value = '17'; document.querySelector('#apply-worker-idle-minutes').click()`);
+    await new Promise((resolve) => setTimeout(resolve, 320));
     await window.webContents.executeJavaScript(`document.querySelector('[data-page="clone"]').click(); document.querySelector('#clone-progress').scrollIntoView({ block: 'center' })`);
     await new Promise((resolve) => setTimeout(resolve, 320));
     const cloneProgressImage = await window.webContents.capturePage();
@@ -1383,6 +1431,12 @@ async function createWindow() {
       })(),
       nonSettingsModelReferences: [...document.querySelectorAll('#page-overview, #page-design, #page-clone, #page-library, #page-tasks, .topbar')].flatMap((node) => node.textContent.match(/Qwen(?:3)?(?:-TTS)?|IndexTTS|VoiceDesign|1\\.7B|2\\.5/gi) || []),
       settingsModelReferencesReady: /Qwen3-TTS/.test(document.querySelector('#qwen-settings').textContent) && /IndexTTS/.test(document.querySelector('#index-settings').textContent),
+      workerIdlePolicyReady: document.querySelector('#worker-idle-minutes')?.min === '1'
+        && document.querySelector('#worker-idle-minutes')?.max === '120'
+        && document.querySelector('#worker-idle-minutes')?.value === '17'
+        && Boolean(document.querySelector('#apply-worker-idle-minutes'))
+        && typeof window.voiceStudio.setWorkerIdleMinutes === 'function'
+        && document.querySelector('#worker-idle-summary')?.textContent.includes('17 分钟'),
       modelLocationControlsReady: ['qwen-settings', 'index-settings'].every((id) => {
         const card = document.getElementById(id);
         return card?.querySelector('.model-location-block code')

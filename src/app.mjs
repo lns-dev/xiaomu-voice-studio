@@ -218,9 +218,63 @@ function setEnginePill(element, installed) {
 function renderEngineSettings() {
   const { qwen, index, runtime } = state.bootstrap.engines;
   $('#runtime-settings').replaceChildren(runtimeCard(runtime));
+  $('#idle-policy-settings').replaceChildren(idlePolicyCard(state.bootstrap.preferences));
   $('#qwen-settings').replaceChildren(engineCard('QWEN3-TTS', qwen.label, qwen, 'qwen'));
   $('#index-settings').replaceChildren(engineCard('INDEXTTS', index.label, index, 'index'));
   $('#artifact-root').textContent = state.bootstrap.artifactRoot;
+  syncIdlePolicySummary();
+}
+
+function syncIdlePolicySummary() {
+  const minutes = state.bootstrap?.preferences?.workerIdleMinutes ?? 10;
+  $('#worker-idle-summary').textContent = `空闲 ${minutes} 分钟自动释放显存`;
+}
+
+function idlePolicyCard(preferences = {}) {
+  const minimum = preferences.workerIdleMinimumMinutes ?? 1;
+  const maximum = preferences.workerIdleMaximumMinutes ?? 120;
+  const minutes = preferences.workerIdleMinutes ?? 10;
+  const fragment = document.createDocumentFragment();
+  const marker = document.createElement('p'); marker.className = 'eyebrow'; marker.textContent = 'GPU MEMORY';
+  const heading = document.createElement('h3'); heading.textContent = '显存释放策略';
+  const description = document.createElement('p');
+  description.textContent = '引擎在没有生成任务时继续驻留，便于再次生成；达到设定时间后自动卸载并释放显存。';
+  const form = document.createElement('div'); form.className = 'idle-policy-form';
+  const field = document.createElement('label');
+  const label = document.createElement('span'); label.textContent = '引擎空闲释放时间';
+  const inputRow = document.createElement('div'); inputRow.className = 'idle-policy-input';
+  const input = document.createElement('input');
+  input.id = 'worker-idle-minutes'; input.type = 'number'; input.min = String(minimum); input.max = String(maximum); input.step = '1'; input.value = String(minutes);
+  input.setAttribute('aria-describedby', 'worker-idle-range');
+  const unit = document.createElement('span'); unit.textContent = '分钟';
+  inputRow.append(input, unit); field.append(label, inputRow);
+  const apply = document.createElement('button'); apply.id = 'apply-worker-idle-minutes'; apply.type = 'button'; apply.className = 'secondary small'; apply.textContent = '应用';
+  const applyPreference = async () => {
+    const requested = Number(input.value);
+    if (!Number.isInteger(requested) || requested < minimum || requested > maximum) {
+      input.focus();
+      showToast(`请输入 ${minimum}–${maximum} 分钟的整数`);
+      return;
+    }
+    setButtonWorking(apply, true, '应用中…');
+    try {
+      state.bootstrap.preferences = await window.voiceStudio.setWorkerIdleMinutes(requested);
+      renderEngineSettings();
+      showToast(`引擎将在空闲 ${requested} 分钟后释放显存`);
+    } catch (error) {
+      showToast(`设置失败：${String(error?.message || error).replace(/^Error invoking remote method '[^']+': Error:\s*/i, '')}`);
+    } finally {
+      setButtonWorking(apply, false);
+    }
+  };
+  apply.addEventListener('click', applyPreference);
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') { event.preventDefault(); void applyPreference(); }
+  });
+  form.append(field, apply);
+  const range = document.createElement('small'); range.id = 'worker-idle-range'; range.textContent = `可设置 ${minimum}–${maximum} 分钟，默认 10 分钟；修改后立即生效。`;
+  fragment.append(marker, heading, description, form, range);
+  return fragment;
 }
 
 function syncEngineAvailability() {

@@ -5,15 +5,20 @@ const test = require('node:test');
 
 const read = (relativePath) => fs.readFileSync(path.join(__dirname, '..', relativePath), 'utf8');
 
-test('workers stay warm for ten minutes and support background warm-up', () => {
+test('workers use a persistent configurable idle timeout and support background warm-up', () => {
   const main = read('electron/main.cjs');
   const preload = read('electron/preload.cjs');
   const html = read('src/index.html');
-  assert.match(main, /const workerIdleTimeoutMs = 10 \* 60 \* 1000/);
+  assert.match(main, /const defaultWorkerIdleMinutes = 10/);
+  assert.match(main, /ipcMain\.handle\('studio:set-worker-idle-minutes'/);
+  assert.match(main, /idleMinutes \* 60 \* 1000/);
+  assert.match(main, /atomicWriteJson\(preferencesPath\(\), studioPreferences\)/);
   assert.match(main, /ipcMain\.handle\('studio:warm-engine'/);
   assert.match(main, /warm\(reference = null\)[\s\S]*type: 'warmup'/);
+  assert.match(preload, /setWorkerIdleMinutes: \(minutes\) => ipcRenderer\.invoke\('studio:set-worker-idle-minutes', minutes\)/);
   assert.match(preload, /warmEngine: \(engine, reference = null\) => ipcRenderer\.invoke\('studio:warm-engine', engine, reference\)/);
-  assert.match(html, /空闲 10 分钟自动释放显存/);
+  assert.match(html, /id="worker-idle-summary"/);
+  assert.match(html, /id="idle-policy-settings"/);
 });
 
 test('renderer prewarms engine pages and coalesces background refresh work', () => {
@@ -22,6 +27,8 @@ test('renderer prewarms engine pages and coalesces background refresh work', () 
   assert.match(app, /pageName === 'design' \? 'qwen' : pageName === 'clone' \? 'index'/);
   assert.match(app, /if \(workspaceRefreshPromise\) return workspaceRefreshPromise/);
   assert.match(app, /document\.visibilityState === 'hidden' \|\| systemStatusPromise/);
+  assert.match(app, /function idlePolicyCard\(preferences = \{\}\)/);
+  assert.match(app, /state\.bootstrap\.preferences = await window\.voiceStudio\.setWorkerIdleMinutes\(requested\)/);
 });
 
 test('inference workers use inference mode and retain reusable conditioning', () => {
