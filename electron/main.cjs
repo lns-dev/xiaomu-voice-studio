@@ -85,6 +85,8 @@ let activeWorker = null;
 let activeJob = null;
 let activeModelDownload = null;
 let runtimeInstallActive = false;
+let storageWatcher = null;
+let storageBroadcastTimer = null;
 const approvedReferences = new Set();
 const approvedOutputs = new Set();
 const workers = new Map();
@@ -724,6 +726,7 @@ function loadLibrary() {
 
 function writeLibrary(records) {
   atomicWriteJson(libraryPath(), records);
+  scheduleStorageBroadcast();
 }
 
 function isManagedVoiceOutput(outputPath) {
@@ -804,6 +807,25 @@ function storageInventory() {
       orphan: { count: orphan.length, bytes: bytes(orphan) }
     }
   };
+}
+
+function scheduleStorageBroadcast(delayMs = 350) {
+  clearTimeout(storageBroadcastTimer);
+  storageBroadcastTimer = setTimeout(() => {
+    storageBroadcastTimer = null;
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.webContents.send('studio:storage-status-changed', storageInventory().summary);
+  }, delayMs);
+}
+
+function startStorageWatcher() {
+  if (storageWatcher) return;
+  try {
+    storageWatcher = fs.watch(artifactRoot, { persistent: false }, () => scheduleStorageBroadcast());
+    storageWatcher.on('error', (error) => console.error('Storage watcher failed:', error));
+  } catch (error) {
+    console.error('Could not watch output directory:', error);
+  }
 }
 
 async function cleanupStorage(input) {
@@ -1257,6 +1279,7 @@ async function createWindow() {
     }
   });
   mainWindow = window;
+  startStorageWatcher();
   window.on('closed', () => { mainWindow = null; });
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.session.webRequest.onBeforeRequest((details, callback) => {
@@ -1278,6 +1301,14 @@ async function createWindow() {
     }
     await window.webContents.executeJavaScript(`document.querySelector('#worker-idle-minutes').value = '17'; document.querySelector('#apply-worker-idle-minutes').click()`);
     await new Promise((resolve) => setTimeout(resolve, 320));
+    const storageWatchProbe = path.join(artifactRoot, `.smoke-storage-${crypto.randomUUID()}.tmp`);
+    try {
+      fs.writeFileSync(storageWatchProbe, 'storage watcher probe', 'utf8');
+      await new Promise((resolve) => setTimeout(resolve, 650));
+    } finally {
+      if (exists(storageWatchProbe)) fs.unlinkSync(storageWatchProbe);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 650));
     await window.webContents.executeJavaScript(`document.querySelector('[data-page="clone"]').click(); document.querySelector('#clone-progress').scrollIntoView({ block: 'center' })`);
     await new Promise((resolve) => setTimeout(resolve, 320));
     const cloneProgressImage = await window.webContents.capturePage();
@@ -1468,6 +1499,9 @@ async function createWindow() {
       storageManagementReady: typeof window.voiceStudio.getStorageStatus === 'function'
         && typeof window.voiceStudio.cleanupStorage === 'function'
         && Boolean(document.querySelector('#storage-summary') && document.querySelector('#cleanup-temporary') && document.querySelector('#cleanup-orphan') && document.querySelector('#cleanup-unsaved')),
+      storageAutoSyncReady: typeof window.voiceStudio.onStorageStatusChanged === 'function'
+        && window.__storageStatusEventCount >= 2
+        && document.querySelector('#storage-temporary')?.textContent.startsWith('0 个文件'),
       storageStatusLoaded: document.querySelector('#storage-saved')?.textContent !== '检测中…',
       parameterPresetRemoved: !document.querySelector('[id*="parameter-preset"], [id*="preset-apply"], [id*="preset-add"], [id*="preset-save"], [id*="preset-delete"]'),
       parameterResetReady: Boolean(document.querySelector('#design-reset-parameters') && document.querySelector('#clone-reset-parameters')),
@@ -1577,6 +1611,10 @@ let quitCleanupStarted = false;
 let quitCleanupFinished = false;
 app.on('before-quit', (event) => {
   for (const worker of workers.values()) worker.stopSync();
+  clearTimeout(storageBroadcastTimer);
+  storageBroadcastTimer = null;
+  storageWatcher?.close();
+  storageWatcher = null;
   activeModelDownload?.controller.abort(new Error('应用正在关闭'));
   if (quitCleanupFinished) return;
   event.preventDefault();

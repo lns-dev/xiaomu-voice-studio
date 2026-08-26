@@ -25,6 +25,19 @@ test('system and storage status restore snapshots before silent refresh', () => 
   assert.match(app, /void probeRuntimeInBackground\(\);/);
 });
 
+test('storage statistics reconcile external output changes automatically', () => {
+  const main = read('electron/main.cjs');
+  const preload = read('electron/preload.cjs');
+  const app = read('src/app.mjs');
+  assert.match(main, /fs\.watch\(artifactRoot, \{ persistent: false \}/);
+  assert.match(main, /studio:storage-status-changed/);
+  assert.match(preload, /onStorageStatusChanged: \(callback\)/);
+  assert.match(app, /if \(name === 'settings' && state\.bootstrap\) void refreshStorage\(\)/);
+  assert.match(app, /if \(storageStatusPromise\) return storageStatusPromise/);
+  assert.match(app, /window\.addEventListener\('focus', refreshVisibleStorage\)/);
+  assert.match(app, /window\.voiceStudio\.onStorageStatusChanged\(\(storage\)/);
+});
+
 test('completed model downloads hide their progress panels', () => {
   const app = read('src/app.mjs');
   assert.match(app, /function modelDownloadProgressHidden\(download\)[\s\S]*\['idle', 'completed'\]\.includes\(download\?\.stage\)/);

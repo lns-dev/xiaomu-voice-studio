@@ -1,5 +1,6 @@
 const titles = { overview: '工作台', design: '音色设计', clone: '音色克隆', library: '音色库', tasks: '任务队列', settings: '引擎设置' };
 window.__voiceStudioErrors = [];
+window.__storageStatusEventCount = 0;
 window.addEventListener('error', (event) => window.__voiceStudioErrors.push(String(event.error?.stack || event.message)));
 window.addEventListener('unhandledrejection', (event) => window.__voiceStudioErrors.push(String(event.reason?.stack || event.reason)));
 const state = {
@@ -24,6 +25,7 @@ const storageStatusSnapshotKey = 'voiceStudio.storageStatus.v1';
 let engineWarmTimer = null;
 let workspaceRefreshPromise = null;
 let systemStatusPromise = null;
+let storageStatusPromise = null;
 const designParameterDefaults = Object.freeze({
   pace: 'relaxed', volume: 'normal', paceFactor: 0.85, volumeFactor: 1,
   temperature: 0.9, topP: 1, topK: 50, repetitionPenalty: 1.05, seed: -1, candidateCount: 1
@@ -58,6 +60,7 @@ function showPage(name) {
   $('#page-title').textContent = titles[name] ?? '音色工坊';
   closeDescriptionHistory();
   scheduleEngineWarm(name);
+  if (name === 'settings' && state.bootstrap) void refreshStorage();
 }
 
 function scheduleEngineWarm(pageName) {
@@ -550,9 +553,13 @@ function renderStorage(storage) {
   try { localStorage.setItem(storageStatusSnapshotKey, JSON.stringify(storage)); } catch { /* optional cache */ }
 }
 
-async function refreshStorage() {
-  try { renderStorage(await window.voiceStudio.getStorageStatus()); }
-  catch (error) { showToast(`读取存储信息失败：${error.message}`); }
+function refreshStorage() {
+  if (storageStatusPromise) return storageStatusPromise;
+  storageStatusPromise = window.voiceStudio.getStorageStatus()
+    .then(renderStorage)
+    .catch((error) => showToast(`读取存储信息失败：${error.message}`))
+    .finally(() => { storageStatusPromise = null; });
+  return storageStatusPromise;
 }
 
 function engineCard(eyebrow, title, engine, engineKey) {
@@ -1764,6 +1771,16 @@ function installEvents() {
   $('#sidebar-toggle').addEventListener('click', () => setSidebarCollapsed(!$('.app-shell').classList.contains('sidebar-collapsed')));
   $$('.nav-item').forEach((item) => item.addEventListener('click', () => showPage(item.dataset.page)));
   $$('.jump').forEach((item) => item.addEventListener('click', () => showPage(item.dataset.target)));
+  const refreshVisibleStorage = () => {
+    if (document.visibilityState !== 'hidden' && $('#page-settings').classList.contains('active')) void refreshStorage();
+  };
+  window.addEventListener('focus', refreshVisibleStorage);
+  document.addEventListener('visibilitychange', refreshVisibleStorage);
+  window.voiceStudio.onStorageStatusChanged((storage) => {
+    window.__storageStatusEventCount += 1;
+    renderStorage(storage);
+    void refreshWorkspaceData();
+  });
   $('#library-search').addEventListener('input', (event) => { state.libraryQuery = event.target.value.trim().toLocaleLowerCase('zh-CN'); renderLibrary(); });
   $('#library-kind-filter').addEventListener('change', (event) => { state.libraryKind = event.target.value; renderLibrary(); });
   $('#library-sort').addEventListener('change', (event) => { state.librarySort = event.target.value; renderLibrary(); });

@@ -45,5 +45,10 @@ contextBridge.exposeInMainWorld('voiceStudio', {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on('studio:model-download-progress', listener);
     return () => ipcRenderer.removeListener('studio:model-download-progress', listener);
+  },
+  onStorageStatusChanged: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('studio:storage-status-changed', listener);
+    return () => ipcRenderer.removeListener('studio:storage-status-changed', listener);
   }
 });
