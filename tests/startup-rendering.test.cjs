@@ -65,10 +65,14 @@ test('runtime compatibility button exposes hover pressed focus and checking feed
   const css = read('src/enhancements.css');
   const app = read('src/app.mjs');
   assert.match(app, /detect\.id = 'probe-runtime-compatibility'/);
-  assert.match(css, /#probe-runtime-compatibility:hover:not\(:disabled\)/);
-  assert.match(css, /#probe-runtime-compatibility:active:not\(:disabled\)/);
+  assert.match(css, /#probe-runtime-compatibility:hover:not\(\.is-working\)/);
+  assert.match(css, /#probe-runtime-compatibility:active:not\(\.is-working\)/);
   assert.match(css, /#probe-runtime-compatibility:focus-visible/);
   assert.match(css, /#probe-runtime-compatibility\.is-working::before/);
+  assert.match(css, /#probe-runtime-compatibility\.is-unavailable:hover/);
+  assert.match(css, /#probe-runtime-compatibility\.is-rejected/);
+  assert.match(app, /detect\.disabled = checking/);
+  assert.match(app, /尚未检测到运行环境，请先安装运行环境或添加环境位置/);
   assert.match(app, /setButtonWorking\(detect, true, '检测中…'\)/);
 });
 

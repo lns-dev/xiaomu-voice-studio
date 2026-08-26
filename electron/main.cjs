@@ -1383,6 +1383,39 @@ async function createWindow() {
       const image = await window.webContents.capturePage();
       fs.writeFileSync(path.join(smokeRoot, `voice-studio-${page}.png`), image.toPNG());
     }
+    const compatibilityButton = await window.webContents.executeJavaScript(`(() => {
+      const button = document.querySelector('#probe-runtime-compatibility');
+      const rect = button.getBoundingClientRect();
+      const style = getComputedStyle(button);
+      return {
+        x: Math.round(rect.left + rect.width / 2),
+        y: Math.round(rect.top + rect.height / 2),
+        disabled: button.disabled,
+        background: style.backgroundColor,
+        transform: style.transform
+      };
+    })()`);
+    window.webContents.sendInputEvent({ type: 'mouseMove', x: compatibilityButton.x, y: compatibilityButton.y });
+    await new Promise((resolve) => setTimeout(resolve, 220));
+    const compatibilityHover = await window.webContents.executeJavaScript(`(() => {
+      const style = getComputedStyle(document.querySelector('#probe-runtime-compatibility'));
+      return { background: style.backgroundColor, transform: style.transform };
+    })()`);
+    const compatibilityHoverImage = await window.webContents.capturePage();
+    fs.writeFileSync(path.join(smokeRoot, 'voice-studio-settings-compatibility-hover.png'), compatibilityHoverImage.toPNG());
+    window.webContents.sendInputEvent({ type: 'mouseDown', x: compatibilityButton.x, y: compatibilityButton.y, button: 'left', clickCount: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    const compatibilityPressed = await window.webContents.executeJavaScript(`(() => {
+      const style = getComputedStyle(document.querySelector('#probe-runtime-compatibility'));
+      return { background: style.backgroundColor, transform: style.transform };
+    })()`);
+    window.webContents.sendInputEvent({ type: 'mouseUp', x: compatibilityButton.x, y: compatibilityButton.y, button: 'left', clickCount: 1 });
+    const compatibilityFeedback = {
+      enabled: !compatibilityButton.disabled,
+      hoverChanged: compatibilityHover.background !== compatibilityButton.background,
+      pressedChanged: compatibilityPressed.background !== compatibilityHover.background
+        || compatibilityPressed.transform !== compatibilityHover.transform
+    };
     await window.webContents.executeJavaScript(`document.querySelector('#worker-idle-minutes').value = '17'; document.querySelector('#apply-worker-idle-minutes').click()`);
     await new Promise((resolve) => setTimeout(resolve, 320));
     const storageWatchProbe = path.join(artifactRoot, `.smoke-storage-${crypto.randomUUID()}.tmp`);
@@ -1626,6 +1659,7 @@ async function createWindow() {
       errors: window.__voiceStudioErrors || []
     })`);
     diagnostics.unsavedResultFileCountAtStartup = storageInventory().summary.unsaved.count;
+    diagnostics.compatibilityFeedback = compatibilityFeedback;
     const resultDockImage = await window.webContents.capturePage();
     fs.writeFileSync(path.join(smokeRoot, 'voice-studio-result-dock.png'), resultDockImage.toPNG());
     window.setSize(1100, 900);

@@ -336,11 +336,23 @@ function runtimeCard(runtime) {
   locations.append(managedLocation, engineLocation);
   const actions = document.createElement('div'); actions.className = 'runtime-actions';
   const detect = document.createElement('button'); detect.id = 'probe-runtime-compatibility'; detect.type = 'button'; detect.className = 'secondary small compatibility-action'; detect.textContent = checking ? '检测中…' : runtime?.compatible === null || runtime?.compatible === undefined ? '检测兼容性' : '重新检测';
-  detect.title = '重新检查 Python、PyTorch、Torchaudio 与 CUDA 兼容性';
-  detect.disabled = !runtime?.ready || checking;
+  detect.title = runtime?.ready
+    ? '重新检查 Python、PyTorch、Torchaudio 与 CUDA 兼容性'
+    : '尚未检测到运行环境，点击查看处理方法';
+  // Keep this action interactive even before a runtime is found. A disabled
+  // button suppresses hover and pressed feedback, which made the control look
+  // broken precisely when users needed guidance most.
+  detect.disabled = checking;
+  detect.classList.toggle('is-unavailable', !runtime?.ready && !checking);
   detect.classList.toggle('is-working', checking);
   detect.setAttribute('aria-busy', String(checking));
   detect.addEventListener('click', async () => {
+    if (!runtime?.ready) {
+      detect.classList.add('is-rejected');
+      window.setTimeout(() => detect.classList.remove('is-rejected'), 420);
+      showToast('尚未检测到运行环境，请先安装运行环境或添加环境位置');
+      return;
+    }
     setButtonWorking(detect, true, '检测中…');
     try {
       const result = await window.voiceStudio.probeRuntime();
