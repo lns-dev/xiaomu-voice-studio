@@ -51,6 +51,16 @@ test('bottom preview restores the last saved voice and falls back to the newest 
   assert.doesNotMatch(app, /else if \(!state\.result\.savedVoiceId\) clearPersistedSelection\(\)/);
 });
 
+test('GPU idle policy apply button exposes hover pressed focus and working feedback', () => {
+  const css = read('src/enhancements.css');
+  const app = read('src/app.mjs');
+  assert.match(css, /#apply-worker-idle-minutes:hover:not\(:disabled\)/);
+  assert.match(css, /#apply-worker-idle-minutes:active:not\(:disabled\)/);
+  assert.match(css, /#apply-worker-idle-minutes:focus-visible/);
+  assert.match(css, /#apply-worker-idle-minutes\.is-working/);
+  assert.match(app, /setButtonWorking\(apply, true, '应用中…'\)/);
+});
+
 test('packaged workers launch from the actual asar-unpacked Python directory', () => {
   const main = read('electron/main.cjs');
   assert.match(main, /path\.join\(process\.resourcesPath, 'app\.asar\.unpacked', 'python'\)/);
