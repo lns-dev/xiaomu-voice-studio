@@ -8,7 +8,7 @@ directories:
   buildResources: build
 extraMetadata:
   name: local-voice-studio
-  version: 0.1.0-alpha.21
+  version: 0.1.0-alpha.22
   main: electron/main.cjs
 files:
   - electron/**/*
@@ -34,9 +34,6 @@ win:
   artifactName: XiaoMuVoiceStudio-${version}-win-${arch}-Setup.${ext}
 nsis:
   include: build/installer.nsh
-  installerIcon: build/installer-icon.ico
-  uninstallerIcon: build/installer-icon.ico
-  installerHeaderIcon: build/installer-icon.ico
   oneClick: false
   perMachine: false
   allowElevation: true
