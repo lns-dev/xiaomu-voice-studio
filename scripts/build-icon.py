@@ -38,4 +38,16 @@ glyph_x = round((size - glyph.width) / 2)
 glyph_y = round((size - glyph.height) / 2)
 background.alpha_composite(glyph, (glyph_x, glyph_y))
 background.save(root / "icon.png")
-background.save(root / "icon.ico", sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+icon_sizes = [(16, 16), (20, 20), (24, 24), (32, 32), (40, 40), (48, 48), (64, 64), (96, 96), (128, 128), (256, 256)]
+background.save(root / "icon.ico", sizes=icon_sizes)
+
+# NSIS draws its header and executable icons inside older fixed-size controls.
+# Keep a larger transparent safe area so Windows high-DPI scaling cannot crop
+# the rounded tile or the M at 125–200% display scale. The installed app keeps
+# using icon.ico at its original visual size.
+installer_icon = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+installer_artwork_size = 392
+installer_artwork = background.resize((installer_artwork_size, installer_artwork_size), Image.Resampling.LANCZOS)
+installer_offset = (size - installer_artwork_size) // 2
+installer_icon.alpha_composite(installer_artwork, (installer_offset, installer_offset))
+installer_icon.save(root / "installer-icon.ico", sizes=icon_sizes)

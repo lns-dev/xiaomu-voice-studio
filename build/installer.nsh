@@ -25,6 +25,10 @@
   !macroend
 
   !macro customHeader
+    # Keep NSIS controls DPI-aware so header and system UAC icons scale without
+    # being cropped on Windows display scales between 125% and 200%.
+    ManifestDPIAware true
+
     Function restoreXiaoMuUpgradeData
       !insertmacro restoreUpgradeDirectory "models"
       !insertmacro restoreUpgradeDirectory "outputs"
