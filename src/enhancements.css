@@ -2184,6 +2184,49 @@
   cursor: progress;
   opacity: 1;
 }
+
+#probe-runtime-compatibility {
+  position:relative;
+  transition:transform .12s ease, border-color .16s ease, background .16s ease, color .16s ease, box-shadow .16s ease;
+}
+#probe-runtime-compatibility:hover:not(:disabled) {
+  color:#effff8;
+  border-color:#3f9a78;
+  background:#172b26;
+  box-shadow:0 7px 20px rgba(52,178,129,.18);
+  transform:translateY(-1px);
+}
+#probe-runtime-compatibility:active:not(:disabled) {
+  color:#fff;
+  border-color:#63d6a9;
+  background:#1d3b32;
+  box-shadow:inset 0 2px 7px rgba(0,0,0,.28),0 2px 8px rgba(52,178,129,.14);
+  transform:translateY(1px) scale(.97);
+}
+#probe-runtime-compatibility:focus-visible {
+  outline:2px solid #72deb0;
+  outline-offset:2px;
+}
+#probe-runtime-compatibility.is-working {
+  color:#a9eed1;
+  border-color:#356d59;
+  background:#14251f;
+  cursor:wait;
+  box-shadow:none;
+  transform:none;
+}
+#probe-runtime-compatibility.is-working::before {
+  content:"";
+  display:inline-block;
+  width:10px;
+  height:10px;
+  margin-right:6px;
+  vertical-align:-1px;
+  border:2px solid rgba(169,238,209,.32);
+  border-top-color:#72deb0;
+  border-radius:50%;
+  animation:spin .75s linear infinite;
+}
 .runtime-actions button.is-working::before,
 .model-location-actions button.is-working::before,
 .storage-card button.is-working::before {

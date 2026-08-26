@@ -335,7 +335,7 @@ function runtimeCard(runtime) {
   engineLocation.append(engineCode);
   locations.append(managedLocation, engineLocation);
   const actions = document.createElement('div'); actions.className = 'runtime-actions';
-  const detect = document.createElement('button'); detect.type = 'button'; detect.className = 'secondary small'; detect.textContent = checking ? '检测中…' : runtime?.compatible === null || runtime?.compatible === undefined ? '检测兼容性' : '重新检测';
+  const detect = document.createElement('button'); detect.id = 'probe-runtime-compatibility'; detect.type = 'button'; detect.className = 'secondary small compatibility-action'; detect.textContent = checking ? '检测中…' : runtime?.compatible === null || runtime?.compatible === undefined ? '检测兼容性' : '重新检测';
   detect.title = '重新检查 Python、PyTorch、Torchaudio 与 CUDA 兼容性';
   detect.disabled = !runtime?.ready || checking;
   detect.classList.toggle('is-working', checking);

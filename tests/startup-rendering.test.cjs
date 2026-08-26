@@ -61,6 +61,17 @@ test('GPU idle policy apply button exposes hover pressed focus and working feedb
   assert.match(app, /setButtonWorking\(apply, true, '应用中…'\)/);
 });
 
+test('runtime compatibility button exposes hover pressed focus and checking feedback', () => {
+  const css = read('src/enhancements.css');
+  const app = read('src/app.mjs');
+  assert.match(app, /detect\.id = 'probe-runtime-compatibility'/);
+  assert.match(css, /#probe-runtime-compatibility:hover:not\(:disabled\)/);
+  assert.match(css, /#probe-runtime-compatibility:active:not\(:disabled\)/);
+  assert.match(css, /#probe-runtime-compatibility:focus-visible/);
+  assert.match(css, /#probe-runtime-compatibility\.is-working::before/);
+  assert.match(app, /setButtonWorking\(detect, true, '检测中…'\)/);
+});
+
 test('packaged workers launch from the actual asar-unpacked Python directory', () => {
   const main = read('electron/main.cjs');
   assert.match(main, /path\.join\(process\.resourcesPath, 'app\.asar\.unpacked', 'python'\)/);
