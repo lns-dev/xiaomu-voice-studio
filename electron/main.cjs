@@ -89,6 +89,7 @@ let storageWatcher = null;
 let storageBroadcastTimer = null;
 const approvedReferences = new Set();
 const approvedOutputs = new Set();
+const referenceAnalysisCache = new Map();
 const workers = new Map();
 const taskkillPath = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'taskkill.exe');
 const workerTaskTimeoutMs = 30 * 60 * 1000;
@@ -737,6 +738,74 @@ function isManagedVoiceOutput(outputPath) {
   return loadTaskHistory().some((task) => task.status === 'completed' && task.output && path.resolve(task.output) === output);
 }
 
+function audioAnalysisSignature(inputPath) {
+  const resolved = path.resolve(inputPath);
+  const stat = fs.statSync(resolved);
+  return `${stat.size}:${stat.mtimeMs}`;
+}
+
+function cachedAudioAnalysis(inputPath) {
+  const resolved = path.resolve(inputPath);
+  let signature;
+  try { signature = audioAnalysisSignature(resolved); } catch { return null; }
+  const cached = referenceAnalysisCache.get(resolved.toLowerCase());
+  return cached?.signature === signature ? cached.result ?? null : null;
+}
+
+function rememberAudioAnalysis(inputPath, analysis) {
+  const resolved = path.resolve(inputPath);
+  referenceAnalysisCache.set(resolved.toLowerCase(), {
+    signature: audioAnalysisSignature(resolved),
+    result: analysis,
+    promise: Promise.resolve(analysis)
+  });
+  return analysis;
+}
+
+function analyzeAudioCached(inputPath) {
+  const resolved = path.resolve(inputPath);
+  const key = resolved.toLowerCase();
+  const signature = audioAnalysisSignature(resolved);
+  const cached = referenceAnalysisCache.get(key);
+  if (cached?.signature === signature) {
+    if (cached.result) return Promise.resolve(cached.result);
+    if (cached.promise) return cached.promise;
+  }
+  const entry = { signature, result: null, promise: null };
+  entry.promise = analyzeAudio(resolved)
+    .then((analysis) => {
+      entry.result = analysis;
+      return analysis;
+    })
+    .catch((error) => {
+      if (referenceAnalysisCache.get(key) === entry) referenceAnalysisCache.delete(key);
+      throw error;
+    });
+  referenceAnalysisCache.set(key, entry);
+  return entry.promise;
+}
+
+function generatedReferencePlaceholder(outputPath) {
+  const sidecar = path.resolve(outputPath).replace(/\.wav$/i, '.json');
+  let audio = {};
+  if (isUnderManagedArtifactRoot(sidecar) && exists(sidecar)) {
+    try { audio = JSON.parse(fs.readFileSync(sidecar, 'utf8')).audio ?? {}; } catch { /* analysis will fill this in shortly */ }
+  }
+  return {
+    durationSeconds: Number(audio.durationSeconds) || 0,
+    sampleRate: Number(audio.sampleRate) || null,
+    channels: 1,
+    integratedLufs: null,
+    truePeakDb: null,
+    loudnessRangeLu: null,
+    silenceSeconds: 0,
+    silenceRatio: 0,
+    waveform: [],
+    status: 'analyzing',
+    issues: []
+  };
+}
+
 function taskForRenderer(task) {
   if (task.status !== 'completed' || !task.output) return task;
   const output = path.resolve(task.output);
@@ -1080,7 +1149,7 @@ ipcMain.handle('studio:pick-reference', async () => {
   if (result.canceled || !result.filePaths[0]) return null;
   const selected = path.resolve(result.filePaths[0]);
   approvedReferences.add(selected.toLowerCase());
-  const analysis = await analyzeAudio(selected);
+  const analysis = await analyzeAudioCached(selected);
   return { path: selected, name: path.basename(selected), url: pathToFileURL(selected).href, analysis };
 });
 
@@ -1093,14 +1162,14 @@ ipcMain.handle('studio:pick-emotion-reference', async () => {
   if (result.canceled || !result.filePaths[0]) return null;
   const selected = path.resolve(result.filePaths[0]);
   approvedReferences.add(selected.toLowerCase());
-  const analysis = await analyzeAudio(selected);
+  const analysis = await analyzeAudioCached(selected);
   return { path: selected, name: path.basename(selected), url: pathToFileURL(selected).href, analysis };
 });
 
 ipcMain.handle('studio:trim-reference', async (_event, input) => {
   const source = path.resolve(String(input?.path ?? ''));
   if (!approvedReferences.has(source.toLowerCase()) || !exists(source)) throw new Error('该参考音频未经应用选择');
-  const analysis = await analyzeAudio(source);
+  const analysis = await analyzeAudioCached(source);
   const startSeconds = Number(input?.startSeconds);
   const endSeconds = Number(input?.endSeconds);
   if (!Number.isFinite(startSeconds) || !Number.isFinite(endSeconds) || startSeconds < 0 || endSeconds <= startSeconds || endSeconds > analysis.durationSeconds + 0.02) {
@@ -1109,6 +1178,7 @@ ipcMain.handle('studio:trim-reference', async (_event, input) => {
   if (endSeconds - startSeconds < 2 || endSeconds - startSeconds > 30) throw new Error('裁剪副本应为 2–30 秒');
   const output = uniqueReferenceOutput(path.parse(source).name);
   const trimmedAnalysis = await createReferenceCopy(source, output, startSeconds, endSeconds, input?.normalize !== false);
+  rememberAudioAnalysis(output, trimmedAnalysis);
   approvedReferences.add(output.toLowerCase());
   return { path: output, name: path.basename(output), url: pathToFileURL(output).href, analysis: trimmedAnalysis, source };
 });
@@ -1119,8 +1189,22 @@ ipcMain.handle('studio:use-output-as-reference', async (_event, outputPath) => {
     throw new Error('该生成结果不可用作参考音频');
   }
   approvedReferences.add(selected.toLowerCase());
-  const analysis = await analyzeAudio(selected);
-  return { path: selected, name: path.basename(selected), url: pathToFileURL(selected).href, analysis };
+  const analysis = cachedAudioAnalysis(selected);
+  return {
+    path: selected,
+    name: path.basename(selected),
+    url: pathToFileURL(selected).href,
+    analysis: analysis ?? generatedReferencePlaceholder(selected),
+    analysisPending: !analysis
+  };
+});
+
+ipcMain.handle('studio:analyze-approved-reference', async (_event, inputPath) => {
+  const selected = path.resolve(String(inputPath ?? ''));
+  if (!approvedReferences.has(selected.toLowerCase()) || !exists(selected)) {
+    throw new Error('该参考音频未经应用选择');
+  }
+  return analyzeAudioCached(selected);
 });
 
 ipcMain.handle('studio:synthesize-clone', (_event, input) => runExclusive('index', validateCloneRequest(input, approvedReferences)));

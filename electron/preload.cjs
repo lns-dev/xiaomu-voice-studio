@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('voiceStudio', {
   pickEmotionReferenceAudio: () => ipcRenderer.invoke('studio:pick-emotion-reference'),
   trimReferenceAudio: (request) => ipcRenderer.invoke('studio:trim-reference', request),
   useOutputAsReference: (outputPath) => ipcRenderer.invoke('studio:use-output-as-reference', outputPath),
+  analyzeApprovedReference: (inputPath) => ipcRenderer.invoke('studio:analyze-approved-reference', inputPath),
   getSystemStatus: () => ipcRenderer.invoke('studio:system-status'),
   getStorageStatus: () => ipcRenderer.invoke('studio:storage-status'),
   setWorkerIdleMinutes: (minutes) => ipcRenderer.invoke('studio:set-worker-idle-minutes', minutes),

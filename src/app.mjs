@@ -635,17 +635,19 @@ function renderReferenceAnalysis(reference) {
   const root = $('#reference-analysis');
   if (!analysis) { root.classList.add('hidden'); return; }
   root.classList.remove('hidden');
+  const analyzing = analysis.status === 'analyzing';
   const ready = analysis.status === 'ready';
-  $('#reference-quality-title').textContent = ready ? '参考音频基础检查通过' : '参考音频建议优化';
-  $('#reference-quality-summary').textContent = `${analysis.durationSeconds.toFixed(2)} 秒 · ${analysis.sampleRate || '?'} Hz · ${analysis.channels || '?'} 声道`;
+  const durationSeconds = Number(analysis.durationSeconds) || 0;
+  $('#reference-quality-title').textContent = analyzing ? '正在后台分析参考音频' : ready ? '参考音频基础检查通过' : '参考音频建议优化';
+  $('#reference-quality-summary').textContent = `${durationSeconds.toFixed(2)} 秒 · ${analysis.sampleRate || '?'} Hz · ${analysis.channels || '?'} 声道`;
   const badge = $('#reference-quality-badge');
-  badge.textContent = ready ? '可用' : '需注意';
+  badge.textContent = analyzing ? '分析中' : ready ? '可用' : '需注意';
   badge.dataset.status = analysis.status;
   const metrics = [
-    ['时长', `${analysis.durationSeconds.toFixed(2)} 秒`],
-    ['响度', analysis.integratedLufs === null ? '未测得' : `${analysis.integratedLufs.toFixed(1)} LUFS`],
-    ['峰值', analysis.truePeakDb === null ? '未测得' : `${analysis.truePeakDb.toFixed(1)} dBTP`],
-    ['静音占比', `${Math.round((analysis.silenceRatio || 0) * 100)}%`]
+    ['时长', `${durationSeconds.toFixed(2)} 秒`],
+    ['响度', Number.isFinite(analysis.integratedLufs) ? `${analysis.integratedLufs.toFixed(1)} LUFS` : analyzing ? '分析中' : '未测得'],
+    ['峰值', Number.isFinite(analysis.truePeakDb) ? `${analysis.truePeakDb.toFixed(1)} dBTP` : analyzing ? '分析中' : '未测得'],
+    ['静音占比', analyzing ? '分析中' : `${Math.round((analysis.silenceRatio || 0) * 100)}%`]
   ];
   $('#reference-metrics').replaceChildren(...metrics.map(([label, value]) => {
     const item = document.createElement('div');
@@ -654,13 +656,14 @@ function renderReferenceAnalysis(reference) {
     item.append(key, data); return item;
   }));
   const issueRoot = $('#reference-issues'); issueRoot.replaceChildren();
+  if (analyzing) { const item = document.createElement('li'); item.textContent = '声纹与质量指标正在后台生成，不影响继续填写克隆参数。'; issueRoot.append(item); }
   for (const issue of analysis.issues || []) { const item = document.createElement('li'); item.textContent = issue; issueRoot.append(item); }
-  if (!(analysis.issues || []).length) { const item = document.createElement('li'); item.textContent = '未发现基础格式、响度或长静音问题；仍请人工确认只有一位说话人且没有音乐。'; issueRoot.append(item); }
-  const end = Math.min(15, analysis.durationSeconds);
+  if (!analyzing && !(analysis.issues || []).length) { const item = document.createElement('li'); item.textContent = '未发现基础格式、响度或长静音问题；仍请人工确认只有一位说话人且没有音乐。'; issueRoot.append(item); }
+  const end = Math.min(15, durationSeconds);
   $('#trim-start').value = '0';
-  $('#trim-start').max = String(Math.max(0, analysis.durationSeconds - 2));
+  $('#trim-start').max = String(Math.max(0, durationSeconds - 2));
   $('#trim-end').value = end.toFixed(1);
-  $('#trim-end').max = String(analysis.durationSeconds);
+  $('#trim-end').max = String(durationSeconds);
 }
 
 function renderVerticalWaveform(root, values = []) {
@@ -1268,6 +1271,15 @@ function setReference(reference, label = reference?.name || '选择参考音频'
   resetWaveformAudio(audio, $('#play-reference'), waveform, reference?.url);
   renderReferenceAnalysis(reference);
   if (selected && $('#page-clone').classList.contains('active')) scheduleEngineWarm('clone');
+}
+
+function applyReferenceAnalysis(referencePath, analysis) {
+  if (!state.reference || !sameOutput(state.reference.path, referencePath)) return;
+  const hadKnownDuration = Number(state.reference.analysis?.durationSeconds) > 0;
+  state.reference = { ...state.reference, analysis, analysisPending: false };
+  renderVerticalWaveform($('#reference-waveform'), analysis.waveform);
+  renderReferenceAnalysis(state.reference);
+  if (!hadKnownDuration && !state.referenceTrim.active) resetReferenceTrim(state.reference);
 }
 
 function setEmotionReference(reference) {
@@ -2064,9 +2076,28 @@ function installEvents() {
   $('#reveal-result').addEventListener('click', () => state.result && window.voiceStudio.revealOutput(state.result.output));
   $('#use-as-reference').addEventListener('click', async () => {
     if (!state.result) return;
-    setReference(await window.voiceStudio.useOutputAsReference(state.result.output));
-    showPage('clone');
-    showToast('当前音色已设为参考音频，可继续输入合成文本');
+    const button = $('#use-as-reference');
+    const selectedOutput = state.result.output;
+    setButtonWorking(button, true, '设置中…');
+    try {
+      const reference = await window.voiceStudio.useOutputAsReference(selectedOutput);
+      setReference(reference);
+      showPage('clone');
+      showToast(reference.analysisPending ? '已设为参考音频，声纹正在后台完善' : '当前音色已设为参考音频，可继续输入合成文本');
+      if (reference.analysisPending) {
+        requestAnimationFrame(() => {
+          window.voiceStudio.analyzeApprovedReference(reference.path)
+            .then((analysis) => applyReferenceAnalysis(reference.path, analysis))
+            .catch((error) => {
+              if (sameOutput(state.reference?.path, reference.path)) showToast(`参考音频分析失败：${error.message}`);
+            });
+        });
+      }
+    } catch (error) {
+      showToast(`设置参考音频失败：${error.message}`);
+    } finally {
+      setButtonWorking(button, false);
+    }
   });
   $('#save-result').addEventListener('click', async () => {
     if (!state.result) return;

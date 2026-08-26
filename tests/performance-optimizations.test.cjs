@@ -46,3 +46,15 @@ test('inference workers use inference mode and retain reusable conditioning', ()
   assert.match(index, /tts\.cache_emo_audio_prompt = reference/);
   assert.match(index, /cached_inputs\[0\] is input_features and cached_inputs\[1\] is attention_mask/);
 });
+
+test('generated results become references before expensive waveform analysis finishes', () => {
+  const main = read('electron/main.cjs');
+  const preload = read('electron/preload.cjs');
+  const app = read('src/app.mjs');
+  assert.match(main, /const referenceAnalysisCache = new Map\(\)/);
+  assert.match(main, /ipcMain\.handle\('studio:use-output-as-reference'[\s\S]*analysisPending: !analysis/);
+  assert.match(main, /ipcMain\.handle\('studio:analyze-approved-reference'/);
+  assert.match(preload, /analyzeApprovedReference: \(inputPath\) => ipcRenderer\.invoke\('studio:analyze-approved-reference', inputPath\)/);
+  assert.match(app, /showPage\('clone'\);[\s\S]*requestAnimationFrame\(\(\) => \{[\s\S]*analyzeApprovedReference/);
+  assert.match(app, /function applyReferenceAnalysis\(referencePath, analysis\)/);
+});
