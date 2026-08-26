@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('voiceStudio', {
   analyzeApprovedReference: (inputPath) => ipcRenderer.invoke('studio:analyze-approved-reference', inputPath),
   getSystemStatus: () => ipcRenderer.invoke('studio:system-status'),
   getStorageStatus: () => ipcRenderer.invoke('studio:storage-status'),
+  logClientError: (input) => ipcRenderer.invoke('studio:log-client-error', input),
   setWorkerIdleMinutes: (minutes) => ipcRenderer.invoke('studio:set-worker-idle-minutes', minutes),
   warmEngine: (engine, reference = null) => ipcRenderer.invoke('studio:warm-engine', engine, reference),
   cleanupStorage: (request) => ipcRenderer.invoke('studio:cleanup-storage', request),

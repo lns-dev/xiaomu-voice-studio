@@ -1,10 +1,10 @@
 {
   "name": "local-voice-studio",
-  "version": "0.1.0-alpha.23",
+  "version": "0.1.0-beta.1",
   "private": true,
   "description": "Local voice design and voice cloning desktop studio",
-  "author": "XiaoMu Voice Studio",
-  "license": "UNLICENSED",
+  "author": "lns.珞归",
+  "license": "Apache-2.0",
   "main": "electron/main.cjs",
   "packageManager": "pnpm@11.19.0",
   "scripts": {
@@ -14,7 +14,9 @@
     "build:icon": "python scripts/build-icon.py",
     "validate:release-tool": "node scripts/validate-release-tool.cjs",
     "pack:debug": "node scripts/validate-release-tool.cjs && electron-builder --config electron-builder.debug.yml --win dir --x64",
-    "dist:win": "node scripts/validate-release-tool.cjs && electron-builder --config electron-builder.yml --win nsis --x64"
+    "dist:win": "node scripts/validate-release-tool.cjs && electron-builder --config electron-builder.yml --win nsis --x64",
+    "smoke:packaged": "node scripts/run-packaged-smoke.cjs",
+    "checksums:release": "node scripts/generate-release-checksums.cjs"
   },
   "devDependencies": {
     "electron": "43.3.0",

@@ -1,8 +1,13 @@
 const titles = { overview: '工作台', design: '音色设计', clone: '音色克隆', library: '音色库', tasks: '任务队列', settings: '引擎设置' };
 window.__voiceStudioErrors = [];
 window.__storageStatusEventCount = 0;
-window.addEventListener('error', (event) => window.__voiceStudioErrors.push(String(event.error?.stack || event.message)));
-window.addEventListener('unhandledrejection', (event) => window.__voiceStudioErrors.push(String(event.reason?.stack || event.reason)));
+function recordRendererError(message, details = '') {
+  const normalized = String(details || message);
+  window.__voiceStudioErrors.push(normalized);
+  void window.voiceStudio?.logClientError?.({ message: String(message), details: normalized }).catch(() => {});
+}
+window.addEventListener('error', (event) => recordRendererError('renderer uncaught error', event.error?.stack || event.message));
+window.addEventListener('unhandledrejection', (event) => recordRendererError('renderer unhandled rejection', event.reason?.stack || event.reason));
 const state = {
   bootstrap: null, reference: null, emotionReference: null, result: null, candidates: [], library: [], tasks: [], descriptionHistory: [], storage: null, logs: [],
   libraryQuery: '', libraryKind: 'all', librarySort: 'favorite',
@@ -408,7 +413,7 @@ function runtimeCard(runtime) {
   const progressDetail = document.createElement('small'); progressDetail.id = 'runtime-progress-detail'; progressDetail.textContent = runtimeProgressDetail(state.runtimeInstall);
   progress.append(progressHeader, progressBar, progressDetail);
   fragment.append(marker, heading, grid);
-  if (['debug', 'alpha'].includes(state.bootstrap?.build?.channel)) fragment.append(locations);
+  if (['debug', 'alpha', 'beta'].includes(state.bootstrap?.build?.channel)) fragment.append(locations);
   fragment.append(progress);
   return fragment;
 }
@@ -1786,6 +1791,10 @@ async function runForm(button, task, options = {}) {
     const cancelled = /worker was stopped|cancelled|已停止/i.test(error.message);
     setTaskStatus(cancelled ? '任务已停止' : '任务失败', cancelled ? '引擎进程已结束' : error.message, false);
     appendLog(`${cancelled ? '停止' : '失败'}：${error.message}`);
+    void window.voiceStudio.logClientError({
+      message: `${options.engine || 'ui'} task ${cancelled ? 'cancelled' : 'failed'}`,
+      details: error?.stack || error?.message || String(error)
+    }).catch(() => {});
     if (options.engine === 'qwen') setDesignProgress(0, cancelled ? '设计任务已停止' : '设计任务失败', cancelled ? '引擎进程已结束' : error.message, cancelled ? 'cancelled' : 'failed');
     if (options.engine === 'index') setCloneProgress(0, cancelled ? '克隆任务已停止' : '克隆任务失败', cancelled ? '引擎进程已结束' : error.message, cancelled ? 'cancelled' : 'failed');
     if (!cancelled) showToast(error.message);
@@ -2016,6 +2025,10 @@ function installEvents() {
     if (!state.reference) return showToast('请先选择参考音频');
     const emotionMode = cloneForm.elements.emotionMode.value;
     if (emotionMode === 'audio' && !state.emotionReference) return showToast('请先选择情感参考音频');
+    if (emotionMode === 'text' && !cloneForm.elements.emotionText.value.trim()) {
+      cloneForm.elements.emotionText.focus();
+      return showToast('请先填写情绪描述，或选择其他情绪控制方式');
+    }
     const form = new FormData(event.currentTarget);
     const request = {
       name: form.get('name'), text: form.get('text'), reference: state.reference.path,

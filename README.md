@@ -46,6 +46,8 @@ pnpm start
 pnpm test
 ```
 
+仓库包含独立 `pnpm-lock.yaml`；在 CI 或发布机器上应使用 `pnpm install --frozen-lockfile --ignore-workspace`，避免受父级 pnpm workspace 影响。
+
 生成 Windows 安装包：
 
 ```powershell
@@ -58,4 +60,8 @@ pnpm dist:win
 
 本仓库不分发模型权重。IndexTTS、Qwen3-TTS、PyTorch、FFmpeg 和 7-Zip 等第三方组件分别适用其原始许可证与使用条款。声音克隆功能仅应用于已获得合法授权的声音。
 
-当前为 Alpha 测试版本。公开分发的未签名安装包可能触发 Windows SmartScreen 提示。
+本项目自有源码使用 [Apache License 2.0](LICENSE)。第三方组件和用户自行下载的模型不因此改变原有许可条款。隐私与漏洞报告见 [PRIVACY.md](PRIVACY.md) 和 [SECURITY.md](SECURITY.md)。
+
+软件诊断日志位于 Electron 用户数据目录的 `logs/studio.log`，仅在本地保留，单个日志最大 2 MB 并保留一份轮转备份。
+
+当前为 Beta 测试版本。公开分发的未签名安装包可能触发 Windows SmartScreen 提示。

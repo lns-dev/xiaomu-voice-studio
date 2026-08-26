@@ -8,7 +8,7 @@ directories:
   buildResources: build
 extraMetadata:
   name: local-voice-studio
-  version: 0.1.0-alpha.23
+  version: 0.1.0-beta.1
   main: electron/main.cjs
 files:
   - electron/**/*
@@ -22,6 +22,12 @@ extraResources:
       - "**/*"
   - from: build/icon.ico
     to: app-icon-v2.ico
+  - from: LICENSE
+    to: LICENSE.txt
+  - from: NOTICE
+    to: NOTICE.txt
+  - from: PRIVACY.md
+    to: PRIVACY.md
 asarUnpack:
   - python/**/*
 win:

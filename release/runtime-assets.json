@@ -3,7 +3,7 @@
   "version": "0.1.0-alpha.3",
   "architecture": "win-x64",
   "createdAt": "2026-08-24T07:26:40.726Z",
-  "downloadBaseUrl": "https://github.com/lns-dev/xiaomu-voice-studio/releases/download/v0.1.0-alpha.3",
+  "downloadBaseUrl": "https://github.com/lns-dev/xiaomu-voice-studio/releases/download/v0.1.0-beta.1",
   "components": {
     "core": {
       "unpackedBytes": 4638993342,

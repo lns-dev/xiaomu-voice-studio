@@ -15,10 +15,33 @@ test('workers use a persistent configurable idle timeout and support background 
   assert.match(main, /atomicWriteJson\(preferencesPath\(\), studioPreferences\)/);
   assert.match(main, /ipcMain\.handle\('studio:warm-engine'/);
   assert.match(main, /warm\(reference = null\)[\s\S]*type: 'warmup'/);
+  assert.match(main, /if \(!worker\.child\) await enforceColdStartResources\(engine\)/);
+  assert.doesNotMatch(main, /!worker\.child \|\| !worker\.modelLoaded/);
   assert.match(preload, /setWorkerIdleMinutes: \(minutes\) => ipcRenderer\.invoke\('studio:set-worker-idle-minutes', minutes\)/);
   assert.match(preload, /warmEngine: \(engine, reference = null\) => ipcRenderer\.invoke\('studio:warm-engine', engine, reference\)/);
   assert.match(html, /id="worker-idle-summary"/);
   assert.match(html, /id="idle-policy-settings"/);
+});
+
+test('clone text emotion is validated in the renderer before remote synthesis', () => {
+  const app = read('src/app.mjs');
+  assert.match(app, /emotionMode === 'text' && !cloneForm\.elements\.emotionText\.value\.trim\(\)/);
+  assert.match(app, /请先填写情绪描述/);
+});
+
+test('optional executable paths are rejected before filesystem probing', () => {
+  const main = read('electron/main.cjs');
+  const audioTools = read('electron/audio-tools.cjs');
+  assert.match(main, /typeof filePath !== 'string' \|\| !filePath/);
+  assert.match(audioTools, /if \(!ffmpegPath \|\| !ffprobePath\)/);
+});
+
+test('release checksum generation follows package and runtime manifest versions', () => {
+  const script = read('scripts/generate-release-checksums.cjs');
+  assert.match(script, /packageMetadata\.version/);
+  assert.match(script, /runtimeManifest\.runtimeVersion/);
+  assert.match(script, /releaseStagingRoot/);
+  assert.doesNotMatch(script, /XiaoMuVoiceStudio-0\.1\.0-alpha\.3/);
 });
 
 test('renderer prewarms engine pages and coalesces background refresh work', () => {

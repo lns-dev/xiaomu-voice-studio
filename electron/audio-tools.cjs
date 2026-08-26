@@ -17,7 +17,7 @@ function resolveTool(name) {
 function assertTools() {
   const ffmpegPath = resolveTool('ffmpeg.exe');
   const ffprobePath = resolveTool('ffprobe.exe');
-  if (!fs.existsSync(ffmpegPath) || !fs.existsSync(ffprobePath)) {
+  if (!ffmpegPath || !ffprobePath) {
     throw new Error('参考音频检测工具未安装，请在“引擎设置”中检查 FFmpeg');
   }
   return { ffmpegPath, ffprobePath };

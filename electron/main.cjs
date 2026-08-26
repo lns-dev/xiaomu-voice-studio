@@ -15,6 +15,7 @@ const { downloadRuntimeBundles, installRuntimeBundles, readManifest, removeDownl
 const { detectBuildChannel } = require('./build-channel.cjs');
 const { MODEL_DOWNLOAD_URLS, isAllowedModelDownloadUrl } = require('./model-downloads.cjs');
 const { downloadPreparedModel, formatBytes: formatDownloadBytes, prepareModelDownload } = require('./model-downloader.cjs');
+const { createDiagnosticLogger, normalizeLogValue } = require('./diagnostic-log.cjs');
 
 if (process.argv.includes('--smoke') && process.env.XIAOMU_SMOKE_USER_DATA) {
   app.setPath('userData', path.resolve(process.env.XIAOMU_SMOKE_USER_DATA));
@@ -22,6 +23,10 @@ if (process.argv.includes('--smoke') && process.env.XIAOMU_SMOKE_USER_DATA) {
 const chromiumSessionRoot = path.join(app.getPath('userData'), 'chromium-session-v2');
 fs.mkdirSync(chromiumSessionRoot, { recursive: true });
 app.setPath('sessionData', chromiumSessionRoot);
+const diagnosticLogger = createDiagnosticLogger({ directory: path.join(app.getPath('userData'), 'logs') });
+diagnosticLogger.write('info', 'application process started', { version: app.getVersion(), packaged: app.isPackaged });
+process.on('uncaughtExceptionMonitor', (error) => diagnosticLogger.write('fatal', 'uncaught exception', error));
+process.on('unhandledRejection', (reason) => diagnosticLogger.write('error', 'unhandled rejection', reason));
 
 const studioRoot = path.resolve(__dirname, '..');
 function loadDevelopmentLocations() {
@@ -98,6 +103,7 @@ const minimumWorkerIdleMinutes = 1;
 const maximumWorkerIdleMinutes = 120;
 
 function exists(filePath) {
+  if (typeof filePath !== 'string' || !filePath) return false;
   try { return fs.existsSync(filePath); } catch { return false; }
 }
 
@@ -357,10 +363,14 @@ class WorkerClient {
     stdout.on('line', (line) => this.handleLine(line));
     child.stderr.on('data', (chunk) => {
       const text = chunk.toString('utf8').trim();
-      if (text) console.error(`[${this.engine} worker] ${text}`);
+      if (text) {
+        console.error(`[${this.engine} worker] ${text}`);
+        diagnosticLogger.write('warning', `${this.engine} worker stderr`, text);
+      }
     });
     child.on('error', (error) => {
       if (this.child !== child) return;
+      diagnosticLogger.write('error', `${this.engine} worker process error`, error);
       for (const entry of this.pending.values()) { clearTimeout(entry.timer); entry.reject(error); }
       this.pending.clear();
       this.child = null;
@@ -370,6 +380,7 @@ class WorkerClient {
     child.on('exit', (code, signal) => {
       if (this.child !== child) return;
       const error = new Error(`本地${this.engine === 'qwen' ? '设计' : '克隆'}引擎进程异常退出（${code ?? signal}）`);
+      diagnosticLogger.write('error', `${this.engine} worker exited unexpectedly`, { code, signal });
       for (const entry of this.pending.values()) { clearTimeout(entry.timer); entry.reject(error); }
       this.pending.clear();
       this.child = null;
@@ -402,6 +413,7 @@ class WorkerClient {
       this.pending.delete(message.id);
       clearTimeout(pending.timer);
       console.error(`[${this.engine} worker error]`, message.message, message.trace || '');
+      diagnosticLogger.write('error', `${this.engine} worker generation failed`, message.trace || message.message);
       pending.reject(new Error(`本地${this.engine === 'qwen' ? '设计' : '克隆'}引擎生成失败：${String(message.message || '未知错误').slice(0, 240)}`));
       this.scheduleIdleStop();
     }
@@ -643,7 +655,10 @@ async function runExclusive(engine, request) {
     }
   }
   const worker = getWorker(engine);
-  if (!worker.child || !worker.modelLoaded) await enforceColdStartResources(engine);
+  // A worker that is already starting or warming has consumed part of the GPU
+  // budget. Re-running the cold-start gate at that point produces a false
+  // low-VRAM rejection. Only gate before the process is created.
+  if (!worker.child) await enforceColdStartResources(engine);
   const joiningWarmup = Boolean(worker.warmPromise && !worker.modelLoaded);
   const effectiveRequest = request.seed === -1
     ? { ...request, requestedSeed: -1, seed: crypto.randomInt(0, 2147483648) }
@@ -702,6 +717,7 @@ async function runExclusive(engine, request) {
       upsertTask({ id, status: 'cancelled', completedAt: new Date().toISOString() });
     } else {
       upsertTask({ id, status: 'failed', error: error.message, completedAt: new Date().toISOString() });
+      diagnosticLogger.write('error', `${engine} generation task failed`, error);
       emitTaskEvent({ type: 'failed', id, engine, message: error.message });
     }
     throw error;
@@ -938,6 +954,12 @@ ipcMain.handle('studio:bootstrap', async () => {
 
 ipcMain.handle('studio:system-status', () => querySystemResources());
 ipcMain.handle('studio:storage-status', () => storageInventory().summary);
+ipcMain.handle('studio:log-client-error', (_event, input) => {
+  const message = normalizeLogValue(input?.message || 'renderer error', 1200);
+  const details = normalizeLogValue(input?.details || '', 4000);
+  diagnosticLogger.write('error', message, details);
+  return true;
+});
 ipcMain.handle('studio:cleanup-storage', (_event, input) => cleanupStorage(input));
 ipcMain.handle('studio:set-worker-idle-minutes', (_event, requestedMinutes) => {
   const minutes = Number(requestedMinutes);
