@@ -10,7 +10,7 @@ if (!validationRoot.startsWith(`${allowedRoot}${path.sep}`)) throw new Error('Un
 fs.rmSync(validationRoot, { recursive: true, force: true });
 fs.mkdirSync(validationRoot, { recursive: true });
 
-const version = '0.1.0-alpha.3';
+const version = '0.1.0-beta.1';
 const bundleRoot = path.join(studioRoot, 'dist', 'voice-studio-runtime', version, 'bundles');
 const manifestPath = path.join(studioRoot, 'dist', 'voice-studio-runtime', version, 'runtime-assets.json');
 const extractorPath = path.join(process.env.LOCALAPPDATA, 'electron-builder', 'Cache', '7zip@1.0.0', '7zip-win-x64-a34pt', 'bin', '7za.exe');

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0-beta.1",
   "architecture": "win-x64",
   "createdAt": "2026-08-24T07:26:40.726Z",
   "downloadBaseUrl": "https://github.com/lns-dev/xiaomu-voice-studio/releases/download/v0.1.0-beta.1",
@@ -9,7 +9,7 @@
       "unpackedBytes": 4638993342,
       "files": [
         {
-          "name": "core-0.1.0-alpha.3-win-x64.7z.001",
+          "name": "core-0.1.0-beta.1-win-x64.7z.001",
           "bytes": 1926182620,
           "sha256": "a7283b8bc8ea51a516ad6d5d4da16b8786075592c651b097c37a7c72b5313078"
         }
@@ -19,7 +19,7 @@
       "unpackedBytes": 1143782529,
       "files": [
         {
-          "name": "indextts25-0.1.0-alpha.3-win-x64.7z.001",
+          "name": "indextts25-0.1.0-beta.1-win-x64.7z.001",
           "bytes": 221809708,
           "sha256": "bf1a8cec7e60ab9eb6d632b7359e340268c5ba5cace4756208e4630e5fbf0a1e"
         }
@@ -29,7 +29,7 @@
       "unpackedBytes": 585257885,
       "files": [
         {
-          "name": "qwen3-tts-voicedesign-0.1.0-alpha.3-win-x64.7z.001",
+          "name": "qwen3-tts-voicedesign-0.1.0-beta.1-win-x64.7z.001",
           "bytes": 118585604,
           "sha256": "23fc932b7c1d4a35d4efe1ce846c611b11f8c28687ed2a71d683956f4ccbe1da"
         }
@@ -39,7 +39,7 @@
       "unpackedBytes": 203590656,
       "files": [
         {
-          "name": "ffmpeg-0.1.0-alpha.3-win-x64.7z.001",
+          "name": "ffmpeg-0.1.0-beta.1-win-x64.7z.001",
           "bytes": 52947434,
           "sha256": "36336abf0c17f06829638e13d665faf0a307ce13fb9682857a56b82ecff9e26c"
         }

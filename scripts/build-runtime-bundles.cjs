@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const studioRoot = path.resolve(__dirname, '..');
-const version = '0.1.0-alpha.3';
+const version = '0.1.0-beta.1';
 const releaseRoot = path.join(studioRoot, 'dist', 'voice-studio-runtime', version);
 const stagingRoot = path.join(releaseRoot, 'staging');
 const bundleRoot = path.join(releaseRoot, 'bundles');
