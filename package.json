@@ -14,7 +14,7 @@
     "build:icon": "python scripts/build-icon.py",
     "validate:release-tool": "node scripts/validate-release-tool.cjs",
     "pack:debug": "node scripts/validate-release-tool.cjs && electron-builder --config electron-builder.debug.yml --win dir --x64",
-    "dist:win": "node scripts/validate-release-tool.cjs && electron-builder --config electron-builder.yml --win nsis --x64",
+    "dist:win": "node scripts/validate-release-tool.cjs && electron-builder --config electron-builder.yml --win nsis --x64 --publish never",
     "smoke:packaged": "node scripts/run-packaged-smoke.cjs",
     "checksums:release": "node scripts/generate-release-checksums.cjs"
   },
