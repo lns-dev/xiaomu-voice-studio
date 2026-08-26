@@ -44,6 +44,13 @@ test('completed model downloads hide their progress panels', () => {
   assert.match(app, /root\.classList\.toggle\('hidden', modelDownloadProgressHidden\(download\)\)/);
 });
 
+test('bottom preview restores the last saved voice and falls back to the newest library voice', () => {
+  const app = read('src/app.mjs');
+  assert.match(app, /const remembered = saved\?\.output[\s\S]*state\.library\.find\(\(voice\) => voice\.url && sameOutput\(voice\.output, saved\.output\)\)/);
+  assert.match(app, /const result = remembered \|\| state\.library\.find\(\(voice\) => voice\.url && voice\.output\) \|\| null/);
+  assert.doesNotMatch(app, /else if \(!state\.result\.savedVoiceId\) clearPersistedSelection\(\)/);
+});
+
 test('packaged workers launch from the actual asar-unpacked Python directory', () => {
   const main = read('electron/main.cjs');
   assert.match(main, /path\.join\(process\.resourcesPath, 'app\.asar\.unpacked', 'python'\)/);

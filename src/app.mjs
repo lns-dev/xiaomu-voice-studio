@@ -115,12 +115,17 @@ function clearPersistedSelection() {
 
 function restoreLastSelection() {
   let saved;
-  try { saved = JSON.parse(localStorage.getItem(lastSelectionKey)); } catch { clearPersistedSelection(); return; }
-  if (!saved?.output) return;
-  const result = state.library.find((voice) => voice.url && sameOutput(voice.output, saved.output));
-  if (!result) { clearPersistedSelection(); return; }
-  const kind = saved.kind === 'clone' || result.kind === 'clone' || result.engine === 'index' ? 'clone' : 'design';
-  setResult(result, saved.name || result.name || '已保存音色', kind, '音色库', false);
+  try { saved = JSON.parse(localStorage.getItem(lastSelectionKey)); } catch { clearPersistedSelection(); }
+  const remembered = saved?.output
+    ? state.library.find((voice) => voice.url && sameOutput(voice.output, saved.output))
+    : null;
+  const result = remembered || state.library.find((voice) => voice.url && voice.output) || null;
+  if (!result) {
+    if (saved?.output) clearPersistedSelection();
+    return;
+  }
+  const kind = (remembered && saved.kind === 'clone') || result.kind === 'clone' || result.engine === 'index' ? 'clone' : 'design';
+  setResult(result, remembered ? (saved.name || result.name || '已保存音色') : (result.name || '已保存音色'), kind, '音色库');
 }
 
 function normalizeProgressStage(stage, inferredStage) {
@@ -1756,7 +1761,6 @@ function setResult(result, name, kind, source = '当前结果', persist = true) 
   $('#result-dock').classList.remove('hidden');
   renderLibraryVoicePicker();
   if (persist && state.result.savedVoiceId) localStorage.setItem(lastSelectionKey, JSON.stringify({ output: result.output, name, kind }));
-  else if (!state.result.savedVoiceId) clearPersistedSelection();
 }
 
 async function runForm(button, task, options = {}) {
